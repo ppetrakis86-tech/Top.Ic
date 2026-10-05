@@ -1,5 +1,11 @@
 import os
 import json
+import re
+
+PRE = re.compile(r"[^\W\d_]+|\d+|\S")
+
+def pre_tokenize(text):
+    return PRE.findall(text)
 
 # --- 1. Συναρτήσεις I/O (Αρχείων) ---
 
@@ -17,38 +23,41 @@ def load_text(filename="text.txt"):
         return f.read()
 
 
-def load_merges(filename="merges.json"):
-    """Φορτώνει τα προηγούμενα merges από το JSON."""
+def load_model(filename="merges.json"):
+    """Φορτώνει τα προηγούμενα merges και το alphabet από το JSON."""
     if os.path.exists(filename):
         print(f"📂 Φορτώθηκε το '{filename}'!")
         with open(filename, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+        if isinstance(data, list):
+            # Παλιό format (μόνο λίστα merges): το alphabet βγαίνει από τα merges
+            alphabet = {ch for item in data for tok in item["pair"] if tok != "</w>" for ch in tok}
+            return data, alphabet
+        return data["merges"], set(data["alphabet"])
     print(f"🆕 Το αρχείο '{filename}' δεν βρέθηκε. Ξεκινάμε εκπαίδευση από το μηδέν!")
-    return []
+    return [], set()
 
 
-def save_merges(merges, filename="merges.json"):
-    """Αποθηκεύει τα merges στο JSON."""
+def save_model(merges, alphabet, filename="merges.json"):
+    """Αποθηκεύει τα merges και το alphabet στο JSON."""
     with open(filename, "w", encoding="utf-8") as f:
-        json.dump(merges, f, ensure_ascii=False, indent=2)
+        json.dump({"alphabet": sorted(alphabet), "merges": merges}, f, ensure_ascii=False, indent=2)
     print(f"💾 Το ανανεωμένο Tokenizer αποθηκεύτηκε στο '{filename}'")
 
 
 # --- 2. Βασικές Συναρτήσεις Training (BPE) ---
 
 def build_vocab(text):
-    words = text.split()
     vocab = {}
-    for word in words:
-        formatted_word = " ".join(list(word)) + " </w>"
-        vocab[formatted_word] = vocab.get(formatted_word, 0) + 1
+    for word in pre_tokenize(text):
+        symbols = tuple(word) + ("</w>",)
+        vocab[symbols] = vocab.get(symbols, 0) + 1
     return vocab
 
 
 def get_stats(vocab):
     pairs = {}
-    for word, freq in vocab.items():
-        symbols = word.split()
+    for symbols, freq in vocab.items():
         for i in range(len(symbols) - 1):
             pair = (symbols[i], symbols[i + 1])
             pairs[pair] = pairs.get(pair, 0) + freq
@@ -57,11 +66,9 @@ def get_stats(vocab):
 
 def merge_vocab(pair, vocab):
     v_out = {}
-    bigram = " ".join(pair)
-    replacement = "".join(pair)
-    for word in vocab:
-        new_word = word.replace(bigram, replacement)
-        v_out[new_word] = vocab[word]
+    for symbols, freq in vocab.items():
+        new_symbols = tuple(encode_word(symbols, pair))
+        v_out[new_symbols] = v_out.get(new_symbols, 0) + freq
     return v_out
 
 
@@ -84,6 +91,18 @@ def train_bpe(vocab, merges, num_merges):
         print(f"Merge {offset + i + 1}: {best_pair}")
     return vocab, merges
 
+def build_alphabet(text):
+    return {ch for ch in text if not ch.isspace()}
+
+def split_chars(word, alphabet):
+    out = []
+    for ch in word:
+        if ch in alphabet:
+            out.append(ch)
+        else:
+            out.extend(f"<{b:02x}>" for b in ch.encode("utf-8"))
+    return out
+
 
 # --- 3. Η Συνάρτηση ENCODE (Inference) ---
 
@@ -101,21 +120,22 @@ def encode_word(symbols, pair):
     return new_symbols
 
 
-def encode(text, merges):
+def encode(text, merges, alphabet, cache=None):
     """Μετατρέπει ένα εντελώς νέο string σε Tokens με βάση τα εκπαιδευμένα merges."""
-    words = text.split()
+    if cache is None:
+        cache = {}
     encoded_tokens = []
 
-    for word in words:
-        # 1. Αρχικό σπάσιμο σε χαρακτήρες + </w>
-        symbols = list(word) + ["</w>"]
+    for word in pre_tokenize(text):
+        if word not in cache:
+            # 1. Αρχικό σπάσιμο σε χαρακτήρες (ή bytes για άγνωστους) + </w>
+            symbols = split_chars(word, alphabet) + ["</w>"]
 
-        # 2. Εφαρμογή των merges με τη σειρά που εκπαιδεύτηκαν (by ID)
-        for item in merges:
-            pair = tuple(item["pair"])
-            symbols = encode_word(symbols, pair)
-
-        encoded_tokens.extend(symbols)
+            # 2. Εφαρμογή των merges με τη σειρά που εκπαιδεύτηκαν (by ID)
+            for item in merges:
+                symbols = encode_word(symbols, tuple(item["pair"]))
+            cache[word] = symbols
+        encoded_tokens.extend(cache[word])
 
     return encoded_tokens
 
@@ -130,19 +150,20 @@ def main():
     # A. Διαβάζουμε το κείμενο εκπαίδευσης & τα παλιά merges
     text = load_text(txt_file)
     vocab = build_vocab(text)
-    merges = load_merges(json_file)
+    merges, alphabet = load_model(json_file)
+    alphabet |= build_alphabet(text)
 
     # B. Εκπαίδευση (Incremental Training)
     vocab = apply_existing_merges(vocab, merges)
     vocab, merges = train_bpe(vocab, merges, new_merges_to_train)
-    save_merges(merges, json_file)
+    save_model(merges, alphabet, json_file)
 
     # C. Δοκιμή της ENCODE σε ΝΕΟ ΚΕΙΜΕΝΟ!
     print("\n" + "=" * 40)
     test_sentence = "I like green bananas and apples"
     print(f"🧪 Νέο Κείμενο Δοκιμής: '{test_sentence}'")
     
-    tokens = encode(test_sentence, merges)
+    tokens = encode(test_sentence, merges, alphabet)
     print("\n🎯 Final Tokens:")
     print(tokens)
 
