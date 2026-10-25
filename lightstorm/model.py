@@ -38,6 +38,7 @@ class Config:
     lb_coef: float = 0.01     # μόνο στο A
     ema_alpha: float = 1e-3   # C1/C2
     beta: float = 0.3         # C1/C2
+    seed: int = 0             # αρχικά κλειδιά του SOM (seed 0 = τα κλειδιά του πρώτου τρεξίματος)
 
 
 class Attention(nn.Module):
@@ -119,7 +120,7 @@ class SomMoE(nn.Module):
         super().__init__()
         self.cfg, self.n = cfg, cfg.side ** 2
         self.experts = Experts(self.n, cfg.d_model, cfg.expert_hidden)
-        g = torch.Generator().manual_seed(1234)
+        g = torch.Generator().manual_seed(1234 + cfg.seed)
         self.register_buffer("keys", torch.randn(self.n, cfg.d_model, generator=g) * 0.1)
         self.register_buffer("D0", metrics.torus_distances(cfg.side))
         self.register_buffer("cross0", metrics.cross(cfg.side))

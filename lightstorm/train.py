@@ -95,7 +95,7 @@ def main():
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    cfg = Config(arm=args.arm)
+    cfg = Config(arm=args.arm, seed=args.seed)
     model = Lightstorm(cfg).to(device)
     train = load_bin(os.path.join(args.corpus, "train.bin"))
     val = load_bin(os.path.join(args.corpus, "val.bin"))

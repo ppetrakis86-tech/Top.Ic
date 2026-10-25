@@ -1,6 +1,7 @@
 """Πίνακας του Γύρου 1 από τα <runs>/<σκέλος>/epochN.json. Ο στόχος loss = το τελικό val του A.
 
     python3 -m lightstorm.report [runs_dir]
+    python3 -m lightstorm.report runs_e20 runs_e20_s1 runs_e20_s2      # πολλά seeds
 """
 import glob
 import json
@@ -37,5 +38,28 @@ def main(runs=os.path.join(ROOT, "runs")):
         print(f"{arm} | {val} | {f'{t:,}' if t else '—'} | {use} | {gold} | {shuf}")
 
 
+def seeds(*dirs):
+    """Μέσος όρος ± διασπορά στην τελευταία εποχή, πάνω σε πολλά seeds (ένας φάκελος ανά seed)."""
+    import numpy as np
+    rows = {}
+    for d in dirs:
+        bench = {arm: b for arm in ("A", "B", "C1", "C2") if (b := load(d, arm))}
+        target = bench["A"][max(bench["A"])]["val_loss"]
+        for arm, b in bench.items():
+            last = b[max(b)]
+            rows.setdefault(arm, []).append([last["val_loss"], last["val_loss"] - target,
+                                             last["shuffle"].get("delta_mean", 0), last["gold_open"]["ratio"],
+                                             last["winners"], last["idle"]])
+    print(f"{len(dirs)} seeds · μέσος ± διασπορά στην τελευταία εποχή\n")
+    print("σκέλος | val | val − A (ίδιο seed) | shuffle Δ | gold ratio | νικητές | άνεργοι")
+    for arm, r in rows.items():
+        r = np.array(r)
+        cells = [f"{m:.3f} ± {s:.3f}" for m, s in zip(r.mean(0), r.std(0))]
+        print(f"{arm} | " + " | ".join(cells))
+
+
 if __name__ == "__main__":
-    main(*sys.argv[1:])
+    if len(sys.argv) > 2:
+        seeds(*sys.argv[1:])
+    else:
+        main(*sys.argv[1:])
