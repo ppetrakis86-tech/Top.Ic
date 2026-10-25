@@ -81,9 +81,37 @@ def frozen(baselines=("runs_e20", "runs_e20_s1", "runs_e20_s2"),
     print(f"\nκενό παγωμένου: {gap:.3f} → {verdict} (κατώφλια από το METRICS.md)")
 
 
+def layer1(l3=("runs_e20", "runs_e20_s1", "runs_e20_s2"),
+           l1=("runs_e20_L1_s0", "runs_e20_L1_s1", "runs_e20_L1_s2")):
+    """Πείραμα 2: A και B με το MoE στο layer 1, απέναντι στο layer 3. Κενό από το A του ίδιου layer και seed."""
+    import numpy as np
+    rows = {}
+    for layer, dirs in (("L3", l3), ("L1", l1)):
+        for d in dirs:
+            a = load(d, "A"); target = a[max(a)]["val_loss"]
+            for arm in ("A", "B"):
+                last = load(d, arm)[max(load(d, arm))]
+                sh = last["shuffle"]
+                rows.setdefault(f"{arm} {layer}", []).append([last["val_loss"], last["val_loss"] - target,
+                    sh.get("delta_mean", 0), sh.get("delta_std", 0), last["gold_open"]["ratio"], last["winners"], last["idle"]])
+    print("σκέλος | val | val − A | shuffle Δ | διασπορά shuffle | gold ratio | νικητές | άνεργοι")
+    for name, r in rows.items():
+        r = np.array(r)
+        print(f"{name} | " + " | ".join(f"{m:.3f} ± {s:.3f}" for m, s in zip(r.mean(0), r.std(0))))
+    b = np.array(rows["B L1"]); gold, gap, d, ds = b[:, 4].mean(), b[:, 1].mean(), b[:, 2].mean(), b[:, 3].mean()
+    real = d >= 10 * ds
+    print(f"\nshuffle B L1: {d:.3f} vs 10×{ds:.3f} → {'πραγματική' if real else 'διακοσμητική'} τοπογραφία")
+    print(f"gold B L1: {gold:.3f} → " + ("σήμα" if gold <= 0.925 and real else "κανένα σήμα"))
+    print(f"κενό B L1: {gap:.3f} → " + ("η θέση εξηγεί την απώλεια" if gap <= 0.018 else
+                                       "καμία βελτίωση" if gap >= 0.037 else "χωρίς συμπέρασμα"))
+    print("(κατώφλια από το METRICS.md)")
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["frozen"]:
         frozen()
+    elif sys.argv[1:] == ["layer1"]:
+        layer1()
     elif len(sys.argv) > 2:
         seeds(*sys.argv[1:])
     else:

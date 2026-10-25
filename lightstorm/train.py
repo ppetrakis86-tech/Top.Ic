@@ -92,12 +92,13 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "runs"))
     ap.add_argument("--freeze-keys-after", type=int, default=0,
                     help="πείραμα 1α: μετά από τόσες εποχές τα κλειδιά παγώνουν (η=0). 0 = ποτέ")
+    ap.add_argument("--moe-layer", type=int, default=2, help="πείραμα 2: 0-based θέση του MoE (2 = το 3ο layer)")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    cfg = Config(arm=args.arm, seed=args.seed)
+    cfg = Config(arm=args.arm, seed=args.seed, moe_layer=args.moe_layer)
     model = Lightstorm(cfg).to(device)
     train = load_bin(os.path.join(args.corpus, "train.bin"))
     val = load_bin(os.path.join(args.corpus, "val.bin"))
