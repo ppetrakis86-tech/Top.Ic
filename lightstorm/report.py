@@ -112,6 +112,8 @@ if __name__ == "__main__":
         frozen()
     elif sys.argv[1:] == ["layer1"]:
         layer1()
+    elif sys.argv[1:] == ["layer1", "5"]:
+        layer1(l1=tuple(f"runs_e20_L1_s{s}" for s in range(5)))
     elif len(sys.argv) > 2:
         seeds(*sys.argv[1:])
     else:
