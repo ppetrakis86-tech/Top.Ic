@@ -58,8 +58,33 @@ def seeds(*dirs):
         print(f"{arm} | " + " | ".join(cells))
 
 
+
+def frozen(baselines=("runs_e20", "runs_e20_s1", "runs_e20_s2"),
+           frozen_dirs=("runs_e20_frozen_s0", "runs_e20_frozen_s1", "runs_e20_frozen_s2")):
+    """Πείραμα 1α: κενό από το A του ίδιου seed, για το B και για το B με παγωμένα κλειδιά."""
+    import numpy as np
+    rows = {"B": [], "B παγωμένο": []}
+    for base, fz in zip(baselines, frozen_dirs):
+        a = load(base, "A"); b = load(base, "B"); f = load(fz, "B")
+        target = a[max(a)]["val_loss"]
+        for name, run in (("B", b), ("B παγωμένο", f)):
+            last = run[max(run)]
+            rows[name].append([last["val_loss"] - target, last["shuffle"]["delta_mean"],
+                               last["shuffle"]["delta_std"], last["gold_open"]["ratio"], last["winners"], last["idle"]])
+    print("σκέλος | val − A | shuffle Δ | διασπορά shuffle | gold ratio | νικητές | άνεργοι")
+    for name, r in rows.items():
+        r = np.array(r)
+        print(f"{name} | " + " | ".join(f"{m:.3f} ± {s:.3f}" for m, s in zip(r.mean(0), r.std(0))))
+    gap = np.mean([x[0] for x in rows["B παγωμένο"]])
+    verdict = ("η αστάθεια εξηγεί το μεγαλύτερο μέρος" if gap <= 0.018 else
+               "η αστάθεια δεν είναι ο λόγος" if gap >= 0.030 else "μερική εξήγηση, χωρίς συμπέρασμα")
+    print(f"\nκενό παγωμένου: {gap:.3f} → {verdict} (κατώφλια από το METRICS.md)")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
+    if sys.argv[1:] == ["frozen"]:
+        frozen()
+    elif len(sys.argv) > 2:
         seeds(*sys.argv[1:])
     else:
         main(*sys.argv[1:])

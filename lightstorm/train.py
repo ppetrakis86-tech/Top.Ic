@@ -90,6 +90,8 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--corpus", default=os.path.join(ROOT, "corpus"))
     ap.add_argument("--out", default=os.path.join(ROOT, "runs"))
+    ap.add_argument("--freeze-keys-after", type=int, default=0,
+                    help="πείραμα 1α: μετά από τόσες εποχές τα κλειδιά παγώνουν (η=0). 0 = ποτέ")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
@@ -116,6 +118,8 @@ def main():
         seen = step * tokens_per_step
         if args.arm != "A":
             model.moe.sigma, model.moe.eta = schedule(seen, steps_per_epoch * tokens_per_step)
+            if args.freeze_keys_after and step >= args.freeze_keys_after * steps_per_epoch:
+                model.moe.eta = 0.0
         for g in opt.param_groups:
             g["lr"] = lr_at(step)
         _, loss, aux = model(x.to(device), y.to(device))
