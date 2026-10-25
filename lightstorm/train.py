@@ -93,12 +93,15 @@ def main():
     ap.add_argument("--freeze-keys-after", type=int, default=0,
                     help="πείραμα 1α: μετά από τόσες εποχές τα κλειδιά παγώνουν (η=0). 0 = ποτέ")
     ap.add_argument("--moe-layer", type=int, default=2, help="πείραμα 2: 0-based θέση του MoE (2 = το 3ο layer)")
+    ap.add_argument("--key-seed", type=int, default=None,
+                    help="πείραμα 2β: seed μόνο για τα αρχικά κλειδιά του SOM (προεπιλογή = --seed)")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    cfg = Config(arm=args.arm, seed=args.seed, moe_layer=args.moe_layer)
+    key_seed = args.seed if args.key_seed is None else args.key_seed
+    cfg = Config(arm=args.arm, seed=key_seed, moe_layer=args.moe_layer)
     model = Lightstorm(cfg).to(device)
     train = load_bin(os.path.join(args.corpus, "train.bin"))
     val = load_bin(os.path.join(args.corpus, "val.bin"))

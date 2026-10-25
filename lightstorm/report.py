@@ -107,9 +107,35 @@ def layer1(l3=("runs_e20", "runs_e20_s1", "runs_e20_s2"),
     print("(κατώφλια από το METRICS.md)")
 
 
+def luck():
+    """Πείραμα 2β: διασπορά του B (layer 1) με ίδιο χάρτη (i) και με μόνο τον χάρτη να αλλάζει (ii)."""
+    import numpy as np
+    series = {"όλα αλλάζουν": [f"runs_e20_L1_s{s}" for s in range(5)],
+              "(i) ίδιος χάρτης": [f"runs_e20_L1_samemap_s{s}" for s in range(5)],
+              "(ii) μόνο ο χάρτης": [f"runs_e20_L1_onlymap_k{s}" for s in range(5)]}
+    stds = {}
+    print("σειρά | val | std val | shuffle Δ | διασπορά shuffle | gold ratio")
+    for name, dirs in series.items():
+        r = []
+        for d in dirs:
+            b = load(d, "B"); last = b[max(b)]
+            r.append([last["val_loss"], last["shuffle"]["delta_mean"], last["shuffle"]["delta_std"], last["gold_open"]["ratio"]])
+        r = np.array(r); stds[name] = r[:, 0].std()
+        ok = r[:, 1].mean() >= 10 * r[:, 2].mean()
+        print(f"{name} | {r[:, 0].mean():.3f} | {stds[name]:.3f} | {r[:, 1].mean():.3f} | {r[:, 2].mean():.3f}"
+              f"{'' if ok else ' (δεν μετράει)'} | {r[:, 3].mean():.3f}")
+    i, ii = stds["(i) ίδιος χάρτης"], stds["(ii) μόνο ο χάρτης"]
+    verdict = ("η τύχη είναι κυρίως στον αρχικό χάρτη" if i <= 0.009 and ii >= 0.012 else
+               "η τύχη είναι κυρίως στο δίκτυο και στα batches" if i >= 0.012 and ii <= 0.009 else
+               "μικτή πηγή, χωρίς συμπέρασμα")
+    print(f"\n(i) {i:.3f} · (ii) {ii:.3f} → {verdict} (κατώφλια από το METRICS.md)")
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["frozen"]:
         frozen()
+    elif sys.argv[1:] == ["luck"]:
+        luck()
     elif sys.argv[1:] == ["layer1"]:
         layer1()
     elif sys.argv[1:] == ["layer1", "5"]:
