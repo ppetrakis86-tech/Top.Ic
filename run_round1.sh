@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
-# Γύρος 1: τα 4 σκέλη το ένα μετά το άλλο, ίδια σειρά batches. Logs στο runs/<σκέλος>.log
+# Γύρος 1: τα 4 σκέλη το ένα μετά το άλλο, ίδια σειρά batches.
+#   ./run_round1.sh          2 εποχές  -> runs/
+#   EPOCHS=20 ./run_round1.sh          -> runs_e20/
 set -e
 cd "$(dirname "$0")"
 PY=${PY:-.venv/bin/python}
-mkdir -p runs
-rm -f runs/done.txt
+EPOCHS=${EPOCHS:-2}
+OUT=runs
+[ "$EPOCHS" != 2 ] && OUT=runs_e$EPOCHS
+mkdir -p "$OUT"
+rm -f "$OUT/done.txt"
 for arm in A B C1 C2; do
-    "$PY" -m lightstorm.train --arm "$arm" > "runs/$arm.log" 2>&1
+    "$PY" -m lightstorm.train --arm "$arm" --epochs "$EPOCHS" --out "$OUT" > "$OUT/$arm.log" 2>&1
 done
-echo done > runs/done.txt
+echo done > "$OUT/done.txt"

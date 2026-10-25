@@ -140,8 +140,9 @@ def main():
             ev.update({"arm": args.arm, "epoch": epoch, "step": step + 1, "tokens": seen, "history": history})
             if args.arm != "A":
                 ev["sigma"], ev["eta"] = model.moe.sigma, model.moe.eta
-            torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "cfg": cfg.__dict__,
-                        "args": vars(args), "bench": ev}, os.path.join(run, f"epoch{epoch}.pt"))
+            if epoch <= 2 or epoch % 10 == 0 or step + 1 == total:     # τα .pt είναι ~90 MB το καθένα
+                torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "cfg": cfg.__dict__,
+                            "args": vars(args), "bench": ev}, os.path.join(run, f"epoch{epoch}.pt"))
             with open(os.path.join(run, f"epoch{epoch}.json"), "w", encoding="utf-8") as f:
                 json.dump(ev, f, indent=1, ensure_ascii=False)
             print(f"💾 checkpoint εποχή {epoch} · shuffle Δ {ev['shuffle'].get('delta_mean', 0):+.4f}")
