@@ -168,9 +168,44 @@ def sheet():
     print(f"\nκενό 16×16: {g:+.3f} (8×8: {gaps['8×8']:+.3f}) → {verdict} (κατώφλια από το METRICS.md)")
 
 
+def sheet7m():
+    """Πείραμα 5: σκάλα χάρτη 4×4 / 8×8 / 16×16 στο 7M, 3 seeds, καλύτερη εποχή κάθε σκέλους."""
+    import numpy as np
+    rungs = {"4×4": [f"runs_e20_7M_4x4_s{s}" for s in range(3)],
+             "8×8": ["runs_e20", "runs_e20_s1", "runs_e20_s2"],
+             "16×16": [f"runs_e20_7M_16x16_s{s}" for s in range(3)]}
+    gap, bval = {}, {}
+    print("φύλλο | A καλύτερος | B καλύτερος | B − A | shuffle B | gold B | νικητές B | άνεργοι B")
+    for name, dirs in rungs.items():
+        r = []
+        for d in dirs:
+            a, b = load(d, "A"), load(d, "B")
+            ea, eb = min(a, key=lambda e: a[e]["val_loss"]), min(b, key=lambda e: b[e]["val_loss"])
+            r.append([a[ea]["val_loss"], b[eb]["val_loss"], b[eb]["val_loss"] - a[ea]["val_loss"],
+                      b[eb]["shuffle"]["delta_mean"], b[eb]["gold_open"]["ratio"], b[eb]["winners"], b[eb]["idle"]])
+        r = np.array(r)
+        m, sd = r.mean(0), r.std(0)
+        gap[name], bval[name] = m[2], m[1]
+        deco = "" if m[3] >= 10 * sd[3] else " (διακοσμητική)"
+        print(f"{name} | {m[0]:.3f}±{sd[0]:.3f} | {m[1]:.3f}±{sd[1]:.3f} | {m[2]:+.3f}±{sd[2]:.3f} | "
+              f"{m[3]:+.3f}±{sd[3]:.3f}{deco} | {m[4]:.3f} | {m[5]:.0f} | {m[6]:.1f}")
+        print("   ανά seed B − A: " + " / ".join(f"{g:+.3f}" for g in r[:, 2]))
+    g4, g8, g16 = gap["4×4"], gap["8×8"], gap["16×16"]
+    if g4 > g8 > g16 and g4 - g16 >= 0.018 and bval["4×4"] - bval["16×16"] >= 0.010:
+        verdict = "ο μεγαλύτερος χάρτης βοηθάει το B"
+    elif g16 >= g4 + 0.018:
+        verdict = "ο μεγαλύτερος χάρτης χειροτερεύει το B"
+    else:
+        verdict = "χωρίς συμπέρασμα"
+    print(f"\nκενό 4×4 {g4:+.3f} → 8×8 {g8:+.3f} → 16×16 {g16:+.3f} · B 4×4 − 16×16: {bval['4×4'] - bval['16×16']:+.3f}"
+          f" → {verdict} (κατώφλια από το METRICS.md)")
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["frozen"]:
         frozen()
+    elif sys.argv[1:] == ["sheet7m"]:
+        sheet7m()
     elif sys.argv[1:] == ["sheet"]:
         sheet()
     elif sys.argv[1:] == ["scale"]:
