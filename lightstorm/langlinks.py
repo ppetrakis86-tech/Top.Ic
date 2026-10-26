@@ -18,15 +18,16 @@ UA = "TopIc-research/0.1 (Lightstorm experiment; github.com/ppetrakis86-tech/Top
 
 def query(params):
     url = API + "?" + urllib.parse.urlencode(params)
-    for attempt in range(5):
+    for attempt in range(8):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA})
+            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
             return json.load(urllib.request.urlopen(req, timeout=60))
-        except Exception as e:                     # δίκτυο: ξαναδοκιμάζει με αναμονή 2, 4, 8, 16 s
-            if attempt == 4:
+        except Exception as e:                     # 429 ή δίκτυο: αναμονή 5, 10, 20 ... έως 120 s
+            if attempt == 7:
                 raise
-            print(f"σφάλμα {e}, ξαναδοκιμάζω", flush=True)
-            time.sleep(2 ** (attempt + 1))
+            wait = min(120, 5 * 2 ** attempt)
+            print(f"σφάλμα {e}, ξαναδοκιμάζω σε {wait}s", flush=True)
+            time.sleep(wait)
 
 
 def main():
@@ -46,7 +47,7 @@ def main():
         if "continue" not in data:
             break
         cont = data["continue"]
-        time.sleep(0.1)
+        time.sleep(1.0)                            # ευγενικό ρυθμό στο API
     with open(out, "w", encoding="utf-8") as f:
         for el, en in sorted(pairs.items()):
             f.write(f"{el}\t{en}\n")
