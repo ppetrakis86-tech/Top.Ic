@@ -4,6 +4,7 @@
 set -e
 cd "$(dirname "$0")"
 PY=${PY:-.venv/bin/python}
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True   # αλλιώς το 110M κάνει OOM στο WSL
 for size in 25M 58M 110M; do
     out=runs_e20_size$size
     mkdir -p "$out"
