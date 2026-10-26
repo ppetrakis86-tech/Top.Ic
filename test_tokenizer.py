@@ -75,17 +75,21 @@ class TestTokenizer(unittest.TestCase):
         self.assertFalse([t for t in tok.vocab if has_digit_merge(t)])
         self.assertEqual(tok.decode(tok.encode(" 15 + 15 = 30")), " 15 + 15 = 30")
 
-    def test_digit_merges_dropped_on_load(self):
+    def test_old_digit_tokens_become_dead_slots(self):
         path = os.path.join(tempfile.mkdtemp(), "digits.json")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"alphabet": ["3", "9", "a", "b", SPACE],
-                       "merges": [{"id": 0, "pair": ["3", "9"]}, {"id": 1, "pair": ["a", "b"]},
-                                  {"id": 2, "pair": [SPACE, "3"]}]}, f)
+        old = Tokenizer(alphabet=["3", "9", "a", "b", SPACE])
+        old.add_alphabet(["3", "9", "a", "b", SPACE])
+        for pair in [("3", "9"), ("a", "b"), (SPACE, "3"), (SPACE, "ab")]:
+            old.add_merge(pair)
+        old.save(path)
         tok = Tokenizer.load(path)
-        self.assertEqual([m["pair"] for m in tok.merges], [["a", "b"]])
-        self.assertFalse([t for t in tok.vocab if has_digit_merge(t)])
+        self.assertEqual(tok.vocab, old.vocab)                         # κανένα id δεν άλλαξε
+        self.assertEqual(tok.encode(" ab"), [old.vocab.index(SPACE + "ab")])
+        self.assertEqual(tok.tokenize(" 39 ab"), [SPACE, "3", "9", SPACE + "ab"])
+        self.assertEqual({tok.vocab[i] for i in tok.dead}, {"39", SPACE + "3"})
         self.assertIn("<39>", tok.vocab)   # τα byte tokens δεν είναι «ψηφία»
-
+        train_bpe(tok, "cd cd cd", 1)                                   # νέα merges μπαίνουν στο τέλος
+        self.assertEqual(tok.vocab[:len(old.vocab)], old.vocab)
 
 if __name__ == "__main__":
     unittest.main()

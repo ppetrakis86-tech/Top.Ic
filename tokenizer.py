@@ -49,8 +49,12 @@ class Tokenizer:
         self.alphabet = set(alphabet or [])
         # vocab: λίστα όπου index = token id. Μόνο προσθήκες στο τέλος, ώστε τα ids να μην αλλάζουν.
         self.vocab = vocab or list(BYTE_TOKENS)
-        self.token_to_id = {tok: i for i, tok in enumerate(self.vocab)}
-        self.ranks = {tuple(item["pair"]): item["id"] for item in self.merges}
+        # Νεκρές θέσεις: παλιά tokens με ενωμένα ψηφία. Μένουν στο vocab για να μην αλλάξει κανένα id,
+        # αλλά δεν βγαίνουν ποτέ από το encode.
+        self.dead = {i for i, tok in enumerate(self.vocab) if i >= len(BYTE_TOKENS) and has_digit_merge(tok)}
+        self.token_to_id = {tok: i for i, tok in enumerate(self.vocab) if i not in self.dead}
+        self.ranks = {tuple(item["pair"]): item["id"] for item in self.merges
+                      if not has_digit_merge(item["pair"][0] + item["pair"][1])}
         self.cache = {}
 
     def _add_token(self, tok):
@@ -85,14 +89,12 @@ class Tokenizer:
         if isinstance(data, list) or any("</w>" in t for m in merges for t in m["pair"]):
             raise SystemExit(f"❌ Το '{filename}' είναι από το παλιό σχήμα με </w> και δεν ταιριάζει "
                              f"με το ▁. Σβήσ' το (ή δώσε άλλο --model) και εκπαίδευσε από την αρχή.")
-        digit = [m for m in merges if has_digit_merge(m["pair"][0] + m["pair"][1])]
-        if digit:
-            # Παλιό μοντέλο με ενωμένα ψηφία: τα πετάμε και ξαναχτίζουμε το vocab (τα ids αλλάζουν!)
-            print(f"🧹 Πετάχτηκαν {len(digit)} merges με ψηφία (π.χ. "
-                  f"{', '.join(repr(m['pair'][0] + m['pair'][1]) for m in digit[:3])}). Τα ids άλλαξαν.")
-            data = {"alphabet": data["alphabet"], "merges": [m for m in merges if m not in digit]}
         if "vocab" in data:
-            return cls(data["merges"], data["alphabet"], data["vocab"])
+            tok = cls(data["merges"], data["alphabet"], data["vocab"])
+            if tok.dead:
+                print(f"🧹 {len(tok.dead)} tokens με ενωμένα ψηφία έγιναν νεκρές θέσεις "
+                      f"(π.χ. {', '.join(repr(tok.vocab[i]) for i in sorted(tok.dead)[:3])}). Τα ids δεν άλλαξαν.")
+            return tok
 
         # Χωρίς vocab: το χτίζουμε από alphabet + merges
         tok = cls()
