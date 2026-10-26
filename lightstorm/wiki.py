@@ -63,32 +63,42 @@ def encode_source(lang, files, args, ftrain, byte_ids, t0):
     """Ένα σώμα κειμένων (μία γλώσσα): train στο ftrain μέχρι το όριο, val σε δική του λίστα."""
     val_parts, n_val = [], 0
     st = {"articles": 0, "chars": 0, "train_tokens": 0, "val_tokens": 0, "val_articles": 0, "byte_tokens": 0}
-    lens = {}
+    done = False
 
-    def feed():
-        for art_id, text in articles(files, args.sample):
-            lens[art_id] = len(text)
-            yield art_id, text
+    def chunks(size=4096):
+        buf = []
+        for item in articles(files, args.sample):
+            buf.append(item)
+            if len(buf) == size:
+                yield buf
+                buf = []
+        if buf:
+            yield buf
 
+    # κομμάτια των 4096 άρθρων: το όριο ελέγχεται ανάμεσα στα κομμάτια, χωρίς break μέσα στο imap
+    # (το break μέσα στο imap κόλλαγε το Pool στο κλείσιμο, και το imap διάβαζε όλα τα άρθρα στη μνήμη)
     with Pool(args.workers, initializer=_init, initargs=(args.model,)) as pool:
-        for art_id, ids in pool.imap(_encode, feed(), chunksize=64):
-            st["articles"] += 1
-            st["chars"] += lens.pop(art_id)
-            st["byte_tokens"] += int((ids < byte_ids).sum())
-            if is_val(f"{lang}:{art_id}"):
-                if n_val < args.val_cap:
-                    val_parts.append(ids)
-                    n_val += len(ids)
-                    st["val_articles"] += 1
-                continue                       # τα άρθρα του val πέρα από το όριο δεν πάνε ούτε στο train
-            st["train_tokens"] += len(ids)
-            if ftrain:
-                ids.tofile(ftrain)
-            if st["articles"] % 20000 == 0:
-                print(f"{lang}: {st['articles']:,} άρθρα · {st['train_tokens']:,} train tokens · "
-                      f"{time.time() - t0:.0f}s", flush=True)
-            if args.cap and st["train_tokens"] >= args.cap:
-                break                          # όριο ανά γλώσσα: ίσος όγκος από κάθε μία
+        for chunk in chunks():
+            for (art_id, text), (_, ids) in zip(chunk, pool.map(_encode, chunk, chunksize=64)):
+                st["articles"] += 1
+                st["chars"] += len(text)
+                st["byte_tokens"] += int((ids < byte_ids).sum())
+                if is_val(f"{lang}:{art_id}"):
+                    if n_val < args.val_cap:
+                        val_parts.append(ids)
+                        n_val += len(ids)
+                        st["val_articles"] += 1
+                    continue                   # τα άρθρα του val πέρα από το όριο δεν πάνε ούτε στο train
+                st["train_tokens"] += len(ids)
+                if ftrain:
+                    ids.tofile(ftrain)
+                if args.cap and st["train_tokens"] >= args.cap:
+                    done = True                # όριο ανά γλώσσα: ίσος όγκος από κάθε μία
+                    break
+            print(f"{lang}: {st['articles']:,} άρθρα · {st['train_tokens']:,} train tokens · "
+                  f"{time.time() - t0:.0f}s", flush=True)
+            if done:
+                break
     val = np.concatenate(val_parts)[:args.val_cap] if val_parts else np.zeros(0, np.uint16)
     st["val_tokens"] = int(len(val))
     st["tokens_per_char"] = round((st["train_tokens"] + st["val_tokens"]) / max(1, st["chars"]), 4)
