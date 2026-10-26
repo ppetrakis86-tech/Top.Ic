@@ -6,10 +6,18 @@ import argparse
 
 SPACE = "\u2581"  # ▁ : το κενό γίνεται μέρος της λέξης που ακολουθεί
 PIECE = re.compile(
-    rf"{SPACE}*(?:[^\W\d_]+|\d+|_|[^\s\w{SPACE}])"  # κενά + λέξη, αριθμός, _ ή σύμβολο
+    rf"\d"                                        # κάθε ψηφίο μόνο του, χωρίς κενό: 0-9 = 10 tokens
+    rf"|{SPACE}*(?:[^\W\d_]+|_|[^\s\w{SPACE}])"  # κενά + λέξη, _ ή σύμβολο
     rf"|{SPACE}+|\s"                               # κενά μόνα τους, ή άλλο whitespace (\n, \t, \r)
 )
 BYTE_TOKENS = [f"<{b:02x}>" for b in range(256)]
+BYTE_RE = re.compile(r"<[0-9a-f]{2}>")
+
+
+def has_digit_merge(tok):
+    """Token από merge που περιέχει ψηφίο (π.χ. '39', '▁3'). Τα ψηφία ζουν μόνο ως χαρακτήρες 0-9."""
+    text = BYTE_RE.sub("", tok)
+    return len(text) > 1 and bool(re.search(r"\d", text))
 
 
 def pre_tokenize(text):
@@ -77,6 +85,12 @@ class Tokenizer:
         if isinstance(data, list) or any("</w>" in t for m in merges for t in m["pair"]):
             raise SystemExit(f"❌ Το '{filename}' είναι από το παλιό σχήμα με </w> και δεν ταιριάζει "
                              f"με το ▁. Σβήσ' το (ή δώσε άλλο --model) και εκπαίδευσε από την αρχή.")
+        digit = [m for m in merges if has_digit_merge(m["pair"][0] + m["pair"][1])]
+        if digit:
+            # Παλιό μοντέλο με ενωμένα ψηφία: τα πετάμε και ξαναχτίζουμε το vocab (τα ids αλλάζουν!)
+            print(f"🧹 Πετάχτηκαν {len(digit)} merges με ψηφία (π.χ. "
+                  f"{', '.join(repr(m['pair'][0] + m['pair'][1]) for m in digit[:3])}). Τα ids άλλαξαν.")
+            data = {"alphabet": data["alphabet"], "merges": [m for m in merges if m not in digit]}
         if "vocab" in data:
             return cls(data["merges"], data["alphabet"], data["vocab"])
 

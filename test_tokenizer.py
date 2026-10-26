@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from tokenizer import SPACE, Tokenizer, build_vocab, encode_word, pre_tokenize, train_bpe
+from tokenizer import SPACE, Tokenizer, build_vocab, encode_word, has_digit_merge, pre_tokenize, train_bpe
 
 TEXT = ("My vegetables list: bananas, red apples, green oranges, broccoli, beans.\n"
         "Καλημέρα, καλησπέρα!  my_var = 42\r\n\tτέλος ")
@@ -30,7 +30,7 @@ class TestTokenizer(unittest.TestCase):
     def test_pre_tokenize(self):
         S = SPACE
         self.assertEqual(pre_tokenize("my_var = 42, γεια!\n"),
-                         ["my", "_", "var", S + "=", S + "42", ",", S + "γεια", "!", "\n"])
+                         ["my", "_", "var", S + "=", S, "4", "2", ",", S + "γεια", "!", "\n"])
 
     def test_pre_tokenize_keeps_everything(self):
         self.assertEqual("".join(pre_tokenize(TEXT)), TEXT.replace(" ", SPACE))
@@ -67,6 +67,24 @@ class TestTokenizer(unittest.TestCase):
             json.dump([{"id": 0, "pair": ["a", "</w>"]}], f)
         with self.assertRaises(SystemExit):
             Tokenizer.load(path)
+
+
+    def test_digits_are_single_chars(self):
+        tok = train_bpe(Tokenizer(), "39+27=66 και 100 + 2026 = 2126 " * 50, 200)
+        self.assertEqual(tok.tokenize("39+27"), ["3", "9", "+", "2", "7"])
+        self.assertFalse([t for t in tok.vocab if has_digit_merge(t)])
+        self.assertEqual(tok.decode(tok.encode(" 15 + 15 = 30")), " 15 + 15 = 30")
+
+    def test_digit_merges_dropped_on_load(self):
+        path = os.path.join(tempfile.mkdtemp(), "digits.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"alphabet": ["3", "9", "a", "b", SPACE],
+                       "merges": [{"id": 0, "pair": ["3", "9"]}, {"id": 1, "pair": ["a", "b"]},
+                                  {"id": 2, "pair": [SPACE, "3"]}]}, f)
+        tok = Tokenizer.load(path)
+        self.assertEqual([m["pair"] for m in tok.merges], [["a", "b"]])
+        self.assertFalse([t for t in tok.vocab if has_digit_merge(t)])
+        self.assertIn("<39>", tok.vocab)   # τα byte tokens δεν είναι «ψηφία»
 
 
 if __name__ == "__main__":
