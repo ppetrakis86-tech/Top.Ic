@@ -6,10 +6,18 @@ import argparse
 
 SPACE = "\u2581"  # ▁ : το κενό γίνεται μέρος της λέξης που ακολουθεί
 PIECE = re.compile(
-    rf"{SPACE}*(?:[^\W\d_]+|\d+|_|[^\s\w{SPACE}])"  # κενά + λέξη, αριθμός, _ ή σύμβολο
+    rf"\d"                                        # κάθε ψηφίο μόνο του, χωρίς κενό: 0-9 = 10 tokens
+    rf"|{SPACE}*(?:[^\W\d_]+|_|[^\s\w{SPACE}])"  # κενά + λέξη, _ ή σύμβολο
     rf"|{SPACE}+|\s"                               # κενά μόνα τους, ή άλλο whitespace (\n, \t, \r)
 )
 BYTE_TOKENS = [f"<{b:02x}>" for b in range(256)]
+BYTE_RE = re.compile(r"<[0-9a-f]{2}>")
+
+
+def has_digit_merge(tok):
+    """Token από merge που περιέχει ψηφίο (π.χ. '39', '▁3'). Τα ψηφία ζουν μόνο ως χαρακτήρες 0-9."""
+    text = BYTE_RE.sub("", tok)
+    return len(text) > 1 and bool(re.search(r"\d", text))
 
 
 def pre_tokenize(text):
@@ -41,8 +49,12 @@ class Tokenizer:
         self.alphabet = set(alphabet or [])
         # vocab: λίστα όπου index = token id. Μόνο προσθήκες στο τέλος, ώστε τα ids να μην αλλάζουν.
         self.vocab = vocab or list(BYTE_TOKENS)
-        self.token_to_id = {tok: i for i, tok in enumerate(self.vocab)}
-        self.ranks = {tuple(item["pair"]): item["id"] for item in self.merges}
+        # Νεκρές θέσεις: παλιά tokens με ενωμένα ψηφία. Μένουν στο vocab για να μην αλλάξει κανένα id,
+        # αλλά δεν βγαίνουν ποτέ από το encode.
+        self.dead = {i for i, tok in enumerate(self.vocab) if i >= len(BYTE_TOKENS) and has_digit_merge(tok)}
+        self.token_to_id = {tok: i for i, tok in enumerate(self.vocab) if i not in self.dead}
+        self.ranks = {tuple(item["pair"]): item["id"] for item in self.merges
+                      if not has_digit_merge(item["pair"][0] + item["pair"][1])}
         self.cache = {}
 
     def _add_token(self, tok):
@@ -78,7 +90,11 @@ class Tokenizer:
             raise SystemExit(f"❌ Το '{filename}' είναι από το παλιό σχήμα με </w> και δεν ταιριάζει "
                              f"με το ▁. Σβήσ' το (ή δώσε άλλο --model) και εκπαίδευσε από την αρχή.")
         if "vocab" in data:
-            return cls(data["merges"], data["alphabet"], data["vocab"])
+            tok = cls(data["merges"], data["alphabet"], data["vocab"])
+            if tok.dead:
+                print(f"🧹 {len(tok.dead)} tokens με ενωμένα ψηφία έγιναν νεκρές θέσεις "
+                      f"(π.χ. {', '.join(repr(tok.vocab[i]) for i in sorted(tok.dead)[:3])}). Τα ids δεν άλλαξαν.")
+            return tok
 
         # Χωρίς vocab: το χτίζουμε από alphabet + merges
         tok = cls()
