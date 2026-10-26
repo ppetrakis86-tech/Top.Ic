@@ -7,9 +7,9 @@
 """
 import json
 import os
+import subprocess
 import time
 import urllib.parse
-import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 API = "https://el.wikipedia.org/w/api.php"
@@ -20,8 +20,10 @@ def query(params):
     url = API + "?" + urllib.parse.urlencode(params)
     for attempt in range(8):
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/json"})
-            return json.load(urllib.request.urlopen(req, timeout=60))
+            # curl αντί για urllib: το API απαντούσε 429 σε κάθε αίτημα του urllib, ενώ στο curl 200
+            out = subprocess.run(["curl", "-sS", "-f", "-m", "60", "-A", UA, url],
+                                 capture_output=True, check=True).stdout
+            return json.loads(out)
         except Exception as e:                     # 429 ή δίκτυο: αναμονή 5, 10, 20 ... έως 120 s
             if attempt == 7:
                 raise
