@@ -53,9 +53,9 @@ def usage(winner_counts, member_counts, total_tokens):
             "idle": int(idle.sum()), "idle_alarm": bool(idle.sum() >= IDLE_ALARM)}
 
 
-def home_positions(token_ids, winners, vocab_size):
+def home_positions(token_ids, winners, vocab_size, n_experts=N_EXPERTS):
     """Η «διεύθυνση» κάθε token στο φύλλο = ο expert που το κερδίζει πιο συχνά (mode)."""
-    hist = np.zeros((vocab_size, N_EXPERTS), dtype=np.int64)
+    hist = np.zeros((vocab_size, n_experts), dtype=np.int64)
     np.add.at(hist, (np.asarray(token_ids), np.asarray(winners)), 1)
     home = hist.argmax(1)
     home[hist.sum(1) == 0] = -1          # token που δεν εμφανίστηκε

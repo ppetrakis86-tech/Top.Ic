@@ -45,7 +45,8 @@ def evaluate(model, val, ctx, device, gold_pairs, batch=32):
     ys = val[1:n * ctx + 1].view(n, ctx)
     tot, cnt = 0.0, 0
     win_all, tok_all = [], []
-    members = torch.zeros(metrics.N_EXPERTS, dtype=torch.long)
+    side = model.cfg.side
+    members = torch.zeros(side ** 2, dtype=torch.long)
     for i in range(0, n, batch):
         x, y = xs[i:i + batch].to(device), ys[i:i + batch].to(device)
         _, _, aux = model(x, y)
@@ -53,14 +54,14 @@ def evaluate(model, val, ctx, device, gold_pairs, batch=32):
         cnt += x.numel()
         win_all.append(aux["winner"].cpu())
         tok_all.append(x.reshape(-1).cpu())
-        members += torch.bincount(aux["members"].reshape(-1).cpu(), minlength=metrics.N_EXPERTS)
+        members += torch.bincount(aux["members"].reshape(-1).cpu(), minlength=side ** 2)
     win = torch.cat(win_all)
     toks = torch.cat(tok_all)
     out = {"val_loss": tot / cnt}
-    out.update(metrics.usage(torch.bincount(win, minlength=metrics.N_EXPERTS).numpy(),
+    out.update(metrics.usage(torch.bincount(win, minlength=side ** 2).numpy(),
                              members.numpy(), len(win)))
-    home = metrics.home_positions(toks.numpy(), win.numpy(), model.cfg.vocab)
-    out["gold_open"] = metrics.gold_distance(home, gold_pairs, metrics.torus_distances().numpy())
+    home = metrics.home_positions(toks.numpy(), win.numpy(), model.cfg.vocab, side ** 2)
+    out["gold_open"] = metrics.gold_distance(home, gold_pairs, metrics.torus_distances(side).numpy())
     model.train()
     return out
 
@@ -71,10 +72,11 @@ def shuffle_test(model, val, ctx, device, base_loss, batch=32):
     if model.cfg.arm == "A":
         return {"note": "το A δεν χρησιμοποιεί θέσεις, Δ = 0 εξ ορισμού"}
     deltas = []
-    for perm in metrics.shuffle_permutations():
+    n = model.cfg.side ** 2
+    for perm in metrics.shuffle_permutations(n):
         model.moe.set_permutation(perm)
         deltas.append(evaluate(model, val, ctx, device, [], batch)["val_loss"] - base_loss)
-    model.moe.set_permutation(torch.arange(metrics.N_EXPERTS))
+    model.moe.set_permutation(torch.arange(n))
     return {"delta_mean": float(np.mean(deltas)), "delta_std": float(np.std(deltas)), "deltas": deltas}
 
 
@@ -100,6 +102,8 @@ def main():
     ap.add_argument("--key-seed", type=int, default=None,
                     help="πείραμα 2β: seed μόνο για τα αρχικά κλειδιά του SOM (προεπιλογή = --seed)")
     ap.add_argument("--size", choices=list(SIZES), default="7M", help="πείραμα 3: μέγεθος μοντέλου")
+    ap.add_argument("--side", type=int, default=8,
+                    help="πείραμα 4: πλευρά του φύλλου. Ο συνολικός όγκος των experts μένει ίδιος")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
@@ -107,8 +111,8 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     key_seed = args.seed if args.key_seed is None else args.key_seed
     d, L, h = SIZES[args.size]
-    cfg = Config(arm=args.arm, seed=key_seed, moe_layer=args.moe_layer,
-                 d_model=d, n_layers=L, n_heads=h, ffn=d, expert_hidden=d // 4)
+    cfg = Config(arm=args.arm, seed=key_seed, moe_layer=args.moe_layer, side=args.side,
+                 d_model=d, n_layers=L, n_heads=h, ffn=d, expert_hidden=d // 4 * 64 // args.side ** 2)
     if args.size != "7M" and args.lr == 1e-3:
         args.lr = 1e-3 * 256 / d          # πείραμα 3: lr ∝ 1/πλάτος, ορισμένο στο METRICS.md
     model = Lightstorm(cfg).to(device)
@@ -130,7 +134,8 @@ def main():
     for step, (x, y) in enumerate(batches(train, cfg.ctx, args.batch, total, args.data_seed)):
         seen = step * tokens_per_step
         if args.arm != "A":
-            model.moe.sigma, model.moe.eta = schedule(seen, steps_per_epoch * tokens_per_step)
+            model.moe.sigma, model.moe.eta = schedule(seen, steps_per_epoch * tokens_per_step,
+                                                      sigma=(2.5 * cfg.side / 8, 0.7))   # αρχικό σ ∝ πλευρά
             if args.freeze_keys_after and step >= args.freeze_keys_after * steps_per_epoch:
                 model.moe.eta = 0.0
         for g in opt.param_groups:

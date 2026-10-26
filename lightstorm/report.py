@@ -150,9 +150,29 @@ def scale():
     print(f"\nκενό ανά μέγεθος: {' → '.join(f'{g:+.3f}' for g in gaps)} → {verdict} (κατώφλια από το METRICS.md)")
 
 
+def sheet():
+    """Πείραμα 4: 110M με φύλλο 8×8 έναντι 16×16 (ίδιος όγκος experts). Καλύτερη εποχή κάθε σκέλους."""
+    gaps = {}
+    print("φύλλο | A καλύτερος (εποχή) | B καλύτερος (εποχή) | B − A | shuffle B | gold B | νικητές B | άνεργοι B")
+    for name, d in (("8×8", "runs_e20_size110M"), ("16×16", "runs_e20_size110M_16x16")):
+        a, b = load(d, "A"), load(d, "B")
+        ea, eb = min(a, key=lambda e: a[e]["val_loss"]), min(b, key=lambda e: b[e]["val_loss"])
+        gaps[name] = b[eb]["val_loss"] - a[ea]["val_loss"]
+        sh = b[eb]["shuffle"]
+        print(f"{name} | {a[ea]['val_loss']:.3f} ({ea}) | {b[eb]['val_loss']:.3f} ({eb}) | {gaps[name]:+.3f} | "
+              f"{sh['delta_mean']:+.3f}±{sh['delta_std']:.3f}{'' if sh['delta_mean'] >= 10 * sh['delta_std'] else ' (διακοσμητική)'} | "
+              f"{b[eb]['gold_open']['ratio']:.3f} | {b[eb]['winners']} | {b[eb]['idle']}")
+    g = gaps["16×16"]
+    verdict = ("ο μεγαλύτερος χάρτης βοηθάει το B (ένδειξη)" if g <= 0.002 else
+               "ο μεγαλύτερος χάρτης χειροτερεύει το B" if g >= 0.038 else "χωρίς συμπέρασμα")
+    print(f"\nκενό 16×16: {g:+.3f} (8×8: {gaps['8×8']:+.3f}) → {verdict} (κατώφλια από το METRICS.md)")
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["frozen"]:
         frozen()
+    elif sys.argv[1:] == ["sheet"]:
+        sheet()
     elif sys.argv[1:] == ["scale"]:
         scale()
     elif sys.argv[1:] == ["luck"]:
