@@ -31,8 +31,8 @@ def main():
         ck = torch.load(path, map_location=device)
         model = Lightstorm(Config(**ck["cfg"])).to(device)
         model.load_state_dict(ck["model"])
-        ev = evaluate(model, val, model.cfg.ctx, device, gold)
-        print(path, json.dumps(ev["gold_open"]), sep="\t")   # εδώ ο «gold_open» κόμβος έχει το sealed
+        ev = evaluate(model, val, model.cfg.ctx, device, {"gold_sealed": gold})
+        print(path, json.dumps(ev["gold_sealed"]), sep="\t")
 
 
 if __name__ == "__main__":

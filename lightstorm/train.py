@@ -37,8 +37,9 @@ def read_gold(path):
 
 
 @torch.no_grad()
-def evaluate(model, val, ctx, device, gold_pairs, batch=32):
-    """Val loss + νικητές/γείτονες/άνεργοι + gold. Όλο το val, μη επικαλυπτόμενα παράθυρα."""
+def evaluate(model, val, ctx, device, gold_sets, batch=32):
+    """Val loss + νικητές/γείτονες/άνεργοι + gold. Όλο το val, μη επικαλυπτόμενα παράθυρα.
+    gold_sets: {όνομα: ζευγάρια}, π.χ. gold_open (ελληνικά↔greeklish) και gold_elen (πείραμα 6)."""
     model.eval()
     n = (len(val) - 1) // ctx
     xs = val[:n * ctx].view(n, ctx)
@@ -61,7 +62,8 @@ def evaluate(model, val, ctx, device, gold_pairs, batch=32):
     out.update(metrics.usage(torch.bincount(win, minlength=side ** 2).numpy(),
                              members.numpy(), len(win)))
     home = metrics.home_positions(toks.numpy(), win.numpy(), model.cfg.vocab, side ** 2)
-    out["gold_open"] = metrics.gold_distance(home, gold_pairs, metrics.torus_distances(side).numpy())
+    for name, pairs in gold_sets.items():
+        out[name] = metrics.gold_distance(home, pairs, metrics.torus_distances(side).numpy())
     model.train()
     return out
 
@@ -75,7 +77,7 @@ def shuffle_test(model, val, ctx, device, base_loss, batch=32):
     n = model.cfg.side ** 2
     for perm in metrics.shuffle_permutations(n):
         model.moe.set_permutation(perm)
-        deltas.append(evaluate(model, val, ctx, device, [], batch)["val_loss"] - base_loss)
+        deltas.append(evaluate(model, val, ctx, device, {}, batch)["val_loss"] - base_loss)
     model.moe.set_permutation(torch.arange(n))
     return {"delta_mean": float(np.mean(deltas)), "delta_std": float(np.std(deltas)), "deltas": deltas}
 
@@ -118,7 +120,9 @@ def main():
     model = Lightstorm(cfg).to(device)
     train = load_bin(os.path.join(args.corpus, "train.bin"))
     val = load_bin(os.path.join(args.corpus, "val.bin"))
-    gold = read_gold(os.path.join(args.corpus, "gold_open.tsv"))     # ΠΟΤΕ το sealed εδώ
+    gold = {"gold_open": read_gold(os.path.join(args.corpus, "gold_open.tsv"))}     # ΠΟΤΕ το sealed εδώ
+    if os.path.exists(os.path.join(args.corpus, "gold_elen.tsv")):                # πείραμα 6: el↔en
+        gold["gold_elen"] = read_gold(os.path.join(args.corpus, "gold_elen.tsv"))
 
     tokens_per_step = args.batch * cfg.ctx
     steps_per_epoch = math.ceil(len(train) / tokens_per_step)
@@ -154,7 +158,9 @@ def main():
             alarm = " ⚠️ ΣΥΝΑΓΕΡΜΟΣ άνεργων" if ev["idle_alarm"] else ""
             print(f"step {step + 1:5d} · {seen:,} tok · train {aux['ce'].item():.3f} · val {ev['val_loss']:.3f} "
                   f"· νικ/γειτ/άνεργ {ev['winners']}/{ev['neighbours']}/{ev['idle']} "
-                  f"· gold {ev['gold_open']['ratio']:.3f} · {time.time() - t0:.0f}s{alarm}")
+                  f"· gold {ev['gold_open']['ratio']:.3f}"
+                  + (f" · el↔en {ev['gold_elen']['ratio']:.3f}" if "gold_elen" in ev else "")
+                  + f" · {time.time() - t0:.0f}s{alarm}")
         if (step + 1) % steps_per_epoch == 0 or step + 1 == total:
             epoch = math.ceil((step + 1) / steps_per_epoch)
             ev = evaluate(model, val, cfg.ctx, device, gold)
