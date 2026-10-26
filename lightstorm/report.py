@@ -131,9 +131,30 @@ def luck():
     print(f"\n(i) {i:.3f} · (ii) {ii:.3f} → {verdict} (κατώφλια από το METRICS.md)")
 
 
+def scale():
+    """Πείραμα 3: A και B σε 4 μεγέθη, seed 0. Κάθε σκέλος στην εποχή με τον καλύτερο val (όχι την τελευταία)."""
+    dirs = {"7M": "runs_e20", "25M": "runs_e20_size25M", "58M": "runs_e20_size58M", "110M": "runs_e20_size110M"}
+    print("μέγεθος | A καλύτερος val (εποχή) | B καλύτερος val (εποχή) | B − A | shuffle B | gold B | A τελευταίος | B τελευταίος")
+    gaps = []
+    for size, d in dirs.items():
+        a, b = load(d, "A"), load(d, "B")
+        ea, eb = min(a, key=lambda e: a[e]["val_loss"]), min(b, key=lambda e: b[e]["val_loss"])
+        gap = b[eb]["val_loss"] - a[ea]["val_loss"]
+        gaps.append(gap)
+        print(f"{size} | {a[ea]['val_loss']:.3f} ({ea}) | {b[eb]['val_loss']:.3f} ({eb}) | {gap:+.3f} | "
+              f"{b[eb]['shuffle']['delta_mean']:+.3f}±{b[eb]['shuffle']['delta_std']:.3f} | {b[eb]['gold_open']['ratio']:.3f} | "
+              f"{a[max(a)]['val_loss']:.3f} | {b[max(b)]['val_loss']:.3f}")
+    shrinks = all(x > y for x, y in zip(gaps, gaps[1:]))
+    verdict = ("το μέγεθος κλείνει το κενό (ένδειξη, θέλει seeds)" if shrinks and gaps[-1] <= 0.018 else
+               "το μέγεθος δεν βοηθάει το B" if gaps[-1] >= gaps[0] else "χωρίς καθαρή τάση")
+    print(f"\nκενό ανά μέγεθος: {' → '.join(f'{g:+.3f}' for g in gaps)} → {verdict} (κατώφλια από το METRICS.md)")
+
+
 if __name__ == "__main__":
     if sys.argv[1:] == ["frozen"]:
         frozen()
+    elif sys.argv[1:] == ["scale"]:
+        scale()
     elif sys.argv[1:] == ["luck"]:
         luck()
     elif sys.argv[1:] == ["layer1"]:

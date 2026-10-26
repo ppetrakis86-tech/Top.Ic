@@ -78,6 +78,10 @@ def shuffle_test(model, val, ctx, device, base_loss, batch=32):
     return {"delta_mean": float(np.mean(deltas)), "delta_std": float(np.std(deltas)), "deltas": deltas}
 
 
+# πείραμα 3: (d_model, layers, heads). FFN 1× και expert d→d/4→d όπως στο 7M.
+SIZES = {"7M": (256, 4, 4), "25M": (512, 6, 8), "58M": (768, 8, 12), "110M": (1024, 10, 16)}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--arm", choices=ARMS, required=True)
@@ -95,13 +99,18 @@ def main():
     ap.add_argument("--moe-layer", type=int, default=2, help="πείραμα 2: 0-based θέση του MoE (2 = το 3ο layer)")
     ap.add_argument("--key-seed", type=int, default=None,
                     help="πείραμα 2β: seed μόνο για τα αρχικά κλειδιά του SOM (προεπιλογή = --seed)")
+    ap.add_argument("--size", choices=list(SIZES), default="7M", help="πείραμα 3: μέγεθος μοντέλου")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     key_seed = args.seed if args.key_seed is None else args.key_seed
-    cfg = Config(arm=args.arm, seed=key_seed, moe_layer=args.moe_layer)
+    d, L, h = SIZES[args.size]
+    cfg = Config(arm=args.arm, seed=key_seed, moe_layer=args.moe_layer,
+                 d_model=d, n_layers=L, n_heads=h, ffn=d, expert_hidden=d // 4)
+    if args.size != "7M" and args.lr == 1e-3:
+        args.lr = 1e-3 * 256 / d          # πείραμα 3: lr ∝ 1/πλάτος, ορισμένο στο METRICS.md
     model = Lightstorm(cfg).to(device)
     train = load_bin(os.path.join(args.corpus, "train.bin"))
     val = load_bin(os.path.join(args.corpus, "val.bin"))
@@ -148,7 +157,8 @@ def main():
             ev.update({"arm": args.arm, "epoch": epoch, "step": step + 1, "tokens": seen, "history": history})
             if args.arm != "A":
                 ev["sigma"], ev["eta"] = model.moe.sigma, model.moe.eta
-            if epoch <= 2 or epoch % 10 == 0 or step + 1 == total:     # τα .pt είναι ~90 MB το καθένα
+            keep = epoch <= 2 or epoch % 10 == 0 if args.size == "7M" else False   # μεγάλα μοντέλα: μόνο το τελευταίο
+            if keep or step + 1 == total:     # τα .pt είναι ~90 MB στο 7M, ~1,3 GB στο 110M
                 torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "cfg": cfg.__dict__,
                             "args": vars(args), "bench": ev}, os.path.join(run, f"epoch{epoch}.pt"))
             with open(os.path.join(run, f"epoch{epoch}.json"), "w", encoding="utf-8") as f:
