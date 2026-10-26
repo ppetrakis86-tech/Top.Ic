@@ -3,3 +3,4 @@ corpus/
 runs/
 runs_*/
 .venv/
+corpus_wiki/
