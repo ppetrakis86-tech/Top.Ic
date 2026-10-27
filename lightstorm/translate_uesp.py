@@ -79,6 +79,7 @@ def main():
 
     tok = MarianTokenizer.from_pretrained(MODEL)
     model = MarianMTModel.from_pretrained(MODEL).to("cuda").half().eval()
+    model.generation_config.max_length = None      # αλλιώς προειδοποίηση σε κάθε batch (μετράει το max_new_tokens)
     t = pq.read_table(args.src).to_pydict()
     titles, texts = t["title"], t["text"]
     if args.limit:
