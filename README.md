@@ -78,3 +78,19 @@ python3 -m unittest -v
 
 - [ ] Ειδικά tokens (`<pad>`, `<eos>` …)
 - [ ] Αποθήκευση στο format του Hugging Face `tokenizers`
+
+---
+
+# Lightstorm (Top.Ic, Γύρος 1)
+
+Το μοντέλο του Top.Ic: μικρό transformer (~7,4M) με ένα τοπογραφικό MoE στο layer 3. Μετρικές: [METRICS.md](METRICS.md).
+
+Το `corpus/` (CLEAN.txt, gold pairs, train/val) **δεν ανεβαίνει ποτέ** στο GitHub. Υπάρχει μόνο τοπικά.
+
+```bash
+python3 -m lightstorm.data                     # 1. encode, split, σφράγισμα (κανένα training του tokenizer)
+python3 -m unittest -v tests.test_lightstorm   # 2. δοκιμές πριν το training
+python3 -m lightstorm.train --arm A            # 3. ένα-ένα: A, B, C1, C2
+```
+
+Χρειάζεται `numpy` και `torch`. Σκέλη: A softmax top-5 + load balancing · B SOM router · C1 B + τοπικός κόρος · C2 B + DeSieno.

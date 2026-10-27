@@ -1,0 +1,19 @@
+{
+ "merges_md5": "5291c0a2981f1a7e589544d0f0ab5b66",
+ "merges": 14000,
+ "vocab": 14679,
+ "clean_md5": "de74f68bfc137e05562d288dc991a6a7",
+ "chars": 2198634,
+ "tokens": 577277,
+ "train_tokens": 519933,
+ "val_tokens": 57344,
+ "split": {
+  "block": 2048,
+  "val_every": 10
+ },
+ "gold_md5": "5e7b64fa36bc601386bcd74a41771383",
+ "gold_pairs": 971,
+ "gold_open": 488,
+ "gold_sealed": 483,
+ "gold_sealed_sha256": "db989fedc500363cd92424aee31a0ed46de543514688a30003fb7d2ce750806f"
+}
