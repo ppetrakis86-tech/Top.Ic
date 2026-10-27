@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 
-from tokenizer import SPACE, Tokenizer, build_vocab, encode_word, pre_tokenize, train_bpe
+from tokenizer import SPACE, Tokenizer, build_vocab, encode_word, has_digit_merge, pre_tokenize, train_bpe
 
 TEXT = ("My vegetables list: bananas, red apples, green oranges, broccoli, beans.\n"
         "Καλημέρα, καλησπέρα!  my_var = 42\r\n\tτέλος ")
@@ -30,7 +30,7 @@ class TestTokenizer(unittest.TestCase):
     def test_pre_tokenize(self):
         S = SPACE
         self.assertEqual(pre_tokenize("my_var = 42, γεια!\n"),
-                         ["my", "_", "var", S + "=", S + "42", ",", S + "γεια", "!", "\n"])
+                         ["my", "_", "var", S + "=", S, "4", "2", ",", S + "γεια", "!", "\n"])
 
     def test_pre_tokenize_keeps_everything(self):
         self.assertEqual("".join(pre_tokenize(TEXT)), TEXT.replace(" ", SPACE))
@@ -68,6 +68,28 @@ class TestTokenizer(unittest.TestCase):
         with self.assertRaises(SystemExit):
             Tokenizer.load(path)
 
+
+    def test_digits_are_single_chars(self):
+        tok = train_bpe(Tokenizer(), "39+27=66 και 100 + 2026 = 2126 " * 50, 200)
+        self.assertEqual(tok.tokenize("39+27"), ["3", "9", "+", "2", "7"])
+        self.assertFalse([t for t in tok.vocab if has_digit_merge(t)])
+        self.assertEqual(tok.decode(tok.encode(" 15 + 15 = 30")), " 15 + 15 = 30")
+
+    def test_old_digit_tokens_become_dead_slots(self):
+        path = os.path.join(tempfile.mkdtemp(), "digits.json")
+        old = Tokenizer(alphabet=["3", "9", "a", "b", SPACE])
+        old.add_alphabet(["3", "9", "a", "b", SPACE])
+        for pair in [("3", "9"), ("a", "b"), (SPACE, "3"), (SPACE, "ab")]:
+            old.add_merge(pair)
+        old.save(path)
+        tok = Tokenizer.load(path)
+        self.assertEqual(tok.vocab, old.vocab)                         # κανένα id δεν άλλαξε
+        self.assertEqual(tok.encode(" ab"), [old.vocab.index(SPACE + "ab")])
+        self.assertEqual(tok.tokenize(" 39 ab"), [SPACE, "3", "9", SPACE + "ab"])
+        self.assertEqual({tok.vocab[i] for i in tok.dead}, {"39", SPACE + "3"})
+        self.assertIn("<39>", tok.vocab)   # τα byte tokens δεν είναι «ψηφία»
+        train_bpe(tok, "cd cd cd", 1)                                   # νέα merges μπαίνουν στο τέλος
+        self.assertEqual(tok.vocab[:len(old.vocab)], old.vocab)
 
 if __name__ == "__main__":
     unittest.main()
