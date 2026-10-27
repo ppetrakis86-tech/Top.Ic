@@ -189,8 +189,12 @@ def train_bpe(tok, text, num_merges, verbose=False):
     εμφανίζεται κάθε ζευγάρι, και ενημερώνει μόνο τις λέξεις που αλλάζουν.
     """
     tok.add_alphabet("".join(pre_tokenize(text)))
+    return train_bpe_freqs(tok, build_vocab(text), num_merges, verbose)
 
-    word_freqs = build_vocab(text)
+
+def train_bpe_freqs(tok, word_freqs, num_merges, verbose=False):
+    """Το ίδιο training, αλλά από έτοιμες συχνότητες λέξεων {λέξη: count} (για μεγάλα, ζυγισμένα μείγματα).
+    Το alphabet πρέπει να έχει μπει ήδη: ό,τι λείπει από αυτό γίνεται bytes."""
     words = [tok.bpe(tok.split_chars(w)) for w in word_freqs]
     freqs = list(word_freqs.values())
 
