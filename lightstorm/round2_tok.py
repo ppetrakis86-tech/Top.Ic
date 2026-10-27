@@ -78,6 +78,7 @@ def main():
     ap.add_argument("--budget", type=float, default=25e6, help="χαρακτήρες ανά πηγή")
     ap.add_argument("--clean", default=os.path.join(ROOT, "corpus", "CLEAN.txt"))
     ap.add_argument("--min-char", type=int, default=500)
+    ap.add_argument("--clean-weight", type=int, default=0, help="βάρος του CLEAN (0 = όσο μία πηγή)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--out", default=os.path.join(W, "round2", "merges.json"))
     ap.add_argument("--manifest", default=os.path.join(ROOT, "round2_tok_manifest.json"))
@@ -99,7 +100,7 @@ def main():
             del c
 
     clean = open(args.clean, encoding="utf-8").read()
-    weight = max(1, round(args.budget / len(clean)))
+    weight = args.clean_weight or max(1, round(args.budget / len(clean)))
     c = count([clean])
     clean_chars = set(clean)
     stats["clean"] = {"chars": len(clean), "weight": weight, "words": sum(c.values()), "types": len(c)}
