@@ -4,3 +4,4 @@ runs/
 runs_*/
 .venv/
 corpus_wiki/
+corpus_r2/

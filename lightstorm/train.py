@@ -106,6 +106,7 @@ def main():
     ap.add_argument("--size", choices=list(SIZES), default="7M", help="πείραμα 3: μέγεθος μοντέλου")
     ap.add_argument("--side", type=int, default=8,
                     help="πείραμα 4: πλευρά του φύλλου. Ο συνολικός όγκος των experts μένει ίδιος")
+    ap.add_argument("--vocab", type=int, default=14679, help="πείραμα 7: 16384 για τον tokenizer του Γύρου 2")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
@@ -113,7 +114,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     key_seed = args.seed if args.key_seed is None else args.key_seed
     d, L, h = SIZES[args.size]
-    cfg = Config(arm=args.arm, seed=key_seed, moe_layer=args.moe_layer, side=args.side,
+    cfg = Config(arm=args.arm, seed=key_seed, vocab=args.vocab, moe_layer=args.moe_layer, side=args.side,
                  d_model=d, n_layers=L, n_heads=h, ffn=d, expert_hidden=d // 4 * 64 // args.side ** 2)
     if args.size != "7M" and args.lr == 1e-3:
         args.lr = 1e-3 * 256 / d          # πείραμα 3: lr ∝ 1/πλάτος, ορισμένο στο METRICS.md
