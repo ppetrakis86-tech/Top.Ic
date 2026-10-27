@@ -99,7 +99,7 @@ def main():
             del c
 
     clean = open(args.clean, encoding="utf-8").read()
-    weight = round(args.budget / len(clean))
+    weight = max(1, round(args.budget / len(clean)))
     c = count([clean])
     clean_chars = set(clean)
     stats["clean"] = {"chars": len(clean), "weight": weight, "words": sum(c.values()), "types": len(c)}
@@ -114,6 +114,12 @@ def main():
         for ch in w:
             chars[ch] += f
     alphabet = sorted(clean_chars | {ch for ch, f in chars.items() if f >= args.min_char})
+    # Λέξεις με χαρακτήρα έξω από το alphabet φεύγουν από το training: αλλιώς θα μάθαινε merges πάνω σε bytes,
+    # και ένα token σαν «<e2><80>» θα έβγαινε στο decode ως κείμενο.
+    keep = set(alphabet)
+    n_types = len(total)
+    total = Counter({w: f for w, f in total.items() if keep.issuperset(w)})
+    print(f"{n_types - len(total):,} λέξεις-τύποι με σπάνιους χαρακτήρες έξω από το training", flush=True)
     tok = Tokenizer()
     tok.add_alphabet(alphabet)
     n_merges = args.vocab - len(tok.vocab)
@@ -125,7 +131,7 @@ def main():
     manifest = {"vocab": len(tok.vocab), "merges": len(tok.merges), "alphabet": len(alphabet),
                 "budget_chars": args.budget, "min_char": args.min_char, "min_word_count": 2,
                 "clean_md5": md5(args.clean), "merges_md5": md5(args.out), "sources": stats,
-                "mix_types": len(total), "seconds": round(time.time() - t0)}
+                "mix_types": n_types, "train_types": len(total), "seconds": round(time.time() - t0)}
     with open(args.manifest, "w", encoding="utf-8") as fo:
         json.dump(manifest, fo, indent=1, ensure_ascii=False)
     print(json.dumps(manifest, indent=1, ensure_ascii=False))

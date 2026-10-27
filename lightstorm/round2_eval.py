@@ -11,7 +11,7 @@ import re
 
 from .round2_tok import parquet_docs, sources, W
 from .wiki import ROOT, is_val
-from tokenizer import BYTE_TOKENS, SPACE, Tokenizer
+from tokenizer import BYTE_TOKENS, SPACE, Tokenizer, pre_tokenize
 
 WORD = re.compile(r"[^\W\d_]+")
 
@@ -36,10 +36,12 @@ def measure(tok, texts):
         exact &= tok.decode(ids) == text
         tokens += len(ids)
         byte += sum(i < len(BYTE_TOKENS) for i in ids)
-        for w in WORD.findall(text):
-            words += 1
-        for t in tok.tokenize(text):
-            whole += bool(WORD.fullmatch(t.lstrip(SPACE)))
+        for piece in pre_tokenize(text):
+            if WORD.fullmatch(piece.lstrip(SPACE)):
+                words += 1
+                if piece not in tok.cache:
+                    tok.cache[piece] = tok.bpe(tok.split_chars(piece))
+                whole += len(tok.cache[piece]) == 1
     return {"tokens_per_word": round(tokens / max(words, 1), 3), "whole_word_pct": round(100 * whole / max(words, 1), 1),
             "byte_pct": round(100 * byte / max(tokens, 1), 3), "round_trip": exact, "tokens": tokens, "words": words}
 
