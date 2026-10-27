@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPLIT_SALT = "Top.Ic-uesp-split"
 MIN_WORDS = 8          # παράγραφος με λιγότερες λέξεις = πίνακας, λίστα ή τίτλος
 MIN_CHARS = 400        # σελίδα με λιγότερη πρόζα πέφτει
-IMAGE_OPTS = re.compile(r"\b(?:thumb|thumbnail|frame|frameless|right|left|center|none|upright|\d+(?:x\d+)?px)\|")
+IMAGE_OPTS = re.compile(r"(?:thumbnail|thumb)\||\b(?:frame|frameless|right|left|center|none|upright|\d+(?:x\d+)?px)\|")
 
 
 def content_ns(key):
