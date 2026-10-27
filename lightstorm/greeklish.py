@@ -70,7 +70,7 @@ class Greeklish:
             else:
                 src = "rule"
                 if "u" in lat and hashlib.sha256(key.encode()).digest()[0] % 100 < Y_SHARE:
-                    lat = lat.replace("u", "y")
+                    lat = re.sub(r"(?<!o)u", "y", lat)     # το ου μένει πάντα ou (pou 1059, poy 8)
             self.cache[key] = (lat, src)
         lat, src = self.cache[key]
         self.stats[src] += 1
