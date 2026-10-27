@@ -26,6 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPLIT_SALT = "Top.Ic-uesp-split"
 MIN_WORDS = 8          # παράγραφος με λιγότερες λέξεις = πίνακας, λίστα ή τίτλος
 MIN_CHARS = 400        # σελίδα με λιγότερη πρόζα πέφτει
+IMAGE_OPTS = re.compile(r"\b(?:thumb|thumbnail|frame|frameless|right|left|center|none|upright|\d+(?:x\d+)?px)\|")
 
 
 def content_ns(key):
@@ -34,6 +35,7 @@ def content_ns(key):
 
 def prose(wikitext):
     text = mwparserfromhell.parse(wikitext).strip_code(normalize=True, collapse=True)
+    text = IMAGE_OPTS.sub("", text)    # οι λεζάντες εικόνων αφήνουν «thumb|right|» μπροστά
     keep = []
     for para in re.split(r"\n\s*\n|\n", text):
         para = " ".join(para.split())
