@@ -111,6 +111,7 @@ def main():
                     help="πείραμα 4: πλευρά του φύλλου. Ο συνολικός όγκος των experts μένει ίδιος")
     ap.add_argument("--vocab", type=int, default=14679, help="πείραμα 7: 16384 για τον tokenizer του Γύρου 2")
     ap.add_argument("--key-init", choices=("white", "smooth"), default="white", help="πείραμα 9: αρχικά κλειδιά του χάρτη")
+    ap.add_argument("--k", type=int, choices=(5, 9), default=5, help="πείραμα 10: μέλη ανά token (A top-k, B σταυρός ή 3×3)")
     ap.add_argument("--census", action="store_true", help="πείραμα 8: απογραφή του router σε κάθε αξιολόγηση")
     ap.add_argument("--manifest", default=None, help="πείραμα 8: για τον πληθυσμό ανά πηγή του val")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
@@ -120,7 +121,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     key_seed = args.seed if args.key_seed is None else args.key_seed
     d, L, h = SIZES[args.size]
-    cfg = Config(arm=args.arm, seed=key_seed, key_init=args.key_init, vocab=args.vocab, moe_layer=args.moe_layer, side=args.side,
+    cfg = Config(arm=args.arm, seed=key_seed, k=args.k, key_init=args.key_init, vocab=args.vocab, moe_layer=args.moe_layer, side=args.side,
                  d_model=d, n_layers=L, n_heads=h, ffn=d, expert_hidden=d // 4 * 64 // args.side ** 2)
     if args.size != "7M" and args.lr == 1e-3:
         args.lr = 1e-3 * 256 / d          # πείραμα 3: lr ∝ 1/πλάτος, ορισμένο στο METRICS.md

@@ -36,6 +36,15 @@ def cross(side=SIDE):
     return torch.tensor(out)
 
 
+def square(side=SIDE):
+    """Πείραμα 10: [ο ίδιος, πάνω, κάτω, αριστερά, δεξιά, και οι 4 διαγώνιοι] στον τόρο (k=9, το 3×3)."""
+    out = []
+    for i, row in enumerate(cross(side).tolist()):
+        r, c = divmod(i, side)
+        out.append(row + [((r + dr) % side) * side + (c + dc) % side for dr, dc in ((-1, -1), (-1, 1), (1, -1), (1, 1))])
+    return torch.tensor(out)
+
+
 def usage(winner_counts, member_counts, total_tokens):
     """Νικητές / γείτονες / άνεργοι.
 

@@ -140,7 +140,7 @@ class SomMoE(nn.Module):
         keys = smooth_keys(cfg.side, cfg.d_model, g) if cfg.key_init == "smooth" else torch.randn(self.n, cfg.d_model, generator=g)
         self.register_buffer("keys", keys * 0.1)
         self.register_buffer("D0", metrics.torus_distances(cfg.side))
-        self.register_buffer("cross0", metrics.cross(cfg.side))
+        self.register_buffer("cross0", metrics.square(cfg.side) if cfg.k == 9 else metrics.cross(cfg.side))
         self.register_buffer("D", self.D0.clone())
         self.register_buffer("cross", self.cross0.clone())
         self.register_buffer("ema", torch.full((self.n,), 1.0 / self.n))
@@ -169,7 +169,7 @@ class SomMoE(nn.Module):
             # με διπλάσιο φαίνεται β φορές πιο μακριά.
             dist = dist * (1 + self.cfg.beta * (self.n * self.congestion() - 1))
         win = dist.argmin(-1)
-        members = self.cross[win]                                   # (N, 5)
+        members = self.cross[win]                                   # (N, k): σταυρός 5 ή 3×3 9
         d = self.D[win[:, None], members]
         w = torch.exp(-d.pow(2) / (2 * self.sigma ** 2))
         w = (w / w.sum(-1, keepdim=True)).to(x.dtype)
