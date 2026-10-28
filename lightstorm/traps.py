@@ -169,7 +169,7 @@ def main():
             print(os.path.basename(run), arm, json.dumps({k: {kk: (round(vv, 3) if isinstance(vv, float) else vv)
                                                               for kk, vv in v.items()} for k, v in r.items()},
                                                          ensure_ascii=False), flush=True)
-    res["data"] = data_traps(args.corpus, args.manifest, vocab)
+    res["data"] = data_traps(args.corpus, args.manifest, vocab or 16384)   # χωρίς runs: το vocab του Γύρου 2
     print(json.dumps(res["data"], ensure_ascii=False), flush=True)
     with open(args.out, "w", encoding="utf-8") as fo:
         json.dump(res, fo, indent=1, ensure_ascii=False)
