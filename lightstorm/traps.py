@@ -158,7 +158,7 @@ def main():
     res = {"runs": {}}
     vocab = None
     for run in sorted(glob.glob(os.path.join(args.runs, "s*"))):
-        for arm in "AB":
+        for arm in ("A", "B", "E"):
             if not os.path.exists(os.path.join(run, arm, "epoch1.pt")):
                 continue
             r = run_traps(run, arm, val, golds, counts, device)

@@ -19,7 +19,7 @@ import torch.nn.functional as F
 
 from . import metrics
 
-ARMS = ("A", "B", "C1", "C2")
+ARMS = ("A", "B", "C1", "C2", "E")    # E: πείραμα 9β, SOM με βάρος το λάθος κάθε token
 
 
 @dataclass
@@ -128,7 +128,7 @@ class SomMoE(nn.Module):
         self.register_buffer("cross", self.cross0.clone())
         self.register_buffer("ema", torch.full((self.n,), 1.0 / self.n))
         self.sigma, self.eta = 2.5, 0.1
-        self.last_x = self.last_win = None
+        self.last_x = self.last_win = self.last_ce = None
 
     def set_permutation(self, perm):
         """Τεστ ανακατέματος: ο expert j μετακομίζει στη θέση perm[j]. Κλειδιά και experts μένουν."""
@@ -168,6 +168,8 @@ class SomMoE(nn.Module):
             return
         x, win = self.last_x, self.last_win
         h = torch.exp(-self.D[win].pow(2) / (2 * self.sigma ** 2))  # (N, 64)
+        if self.cfg.arm == "E" and self.last_ce is not None:        # μεγάλο λάθος = τραβάει πιο δυνατά τα κλειδιά
+            h = h * (self.last_ce / self.last_ce.mean().clamp_min(1e-8))[:, None]
         mass = h.sum(0)
         target = (h.T @ x) / mass.clamp_min(1e-8)[:, None]
         self.keys += self.eta * (mass > 1e-8).float()[:, None] * (target - self.keys)
@@ -175,7 +177,7 @@ class SomMoE(nn.Module):
             decay = (1 - self.cfg.ema_alpha) ** len(win)
             freq = torch.bincount(win, minlength=self.n).float() / len(win)
             self.ema.mul_(decay).add_((1 - decay) * freq)
-        self.last_x = self.last_win = None
+        self.last_x = self.last_win = self.last_ce = None
 
 
 class Block(nn.Module):
@@ -230,8 +232,11 @@ class Lightstorm(nn.Module):
         logits = self.ln_f(x) @ self.tok.weight.T                   # tied embeddings
         loss = None
         if targets is not None:
-            loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
+            ce = F.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1), reduction="none")
+            loss = ce.mean()
             aux["ce"] = loss.detach()
+            if self.cfg.arm == "E" and self.training:
+                self.moe.last_ce = ce.detach().float()
             if "lb" in aux:
                 loss = loss + self.cfg.lb_coef * aux["lb"]
         return logits, loss, aux
