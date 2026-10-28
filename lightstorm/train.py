@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from . import metrics
+from .census import Census
 from .model import ARMS, Config, Lightstorm, count_params, schedule
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,7 +38,7 @@ def read_gold(path):
 
 
 @torch.no_grad()
-def evaluate(model, val, ctx, device, gold_sets, batch=32):
+def evaluate(model, val, ctx, device, gold_sets, batch=32, raw=False):
     """Val loss + νικητές/γείτονες/άνεργοι + gold. Όλο το val, μη επικαλυπτόμενα παράθυρα.
     gold_sets: {όνομα: ζευγάρια}, π.χ. gold_open (ελληνικά↔greeklish) και gold_elen (πείραμα 6)."""
     model.eval()
@@ -64,6 +65,8 @@ def evaluate(model, val, ctx, device, gold_sets, batch=32):
     home = metrics.home_positions(toks.numpy(), win.numpy(), model.cfg.vocab, side ** 2)
     for name, pairs in gold_sets.items():
         out[name] = metrics.gold_distance(home, pairs, metrics.torus_distances(side).numpy())
+    if raw:                                   # πείραμα 8: για την απογραφή
+        out["_win"], out["_toks"] = win.numpy(), toks.numpy()
     model.train()
     return out
 
@@ -107,6 +110,8 @@ def main():
     ap.add_argument("--side", type=int, default=8,
                     help="πείραμα 4: πλευρά του φύλλου. Ο συνολικός όγκος των experts μένει ίδιος")
     ap.add_argument("--vocab", type=int, default=14679, help="πείραμα 7: 16384 για τον tokenizer του Γύρου 2")
+    ap.add_argument("--census", action="store_true", help="πείραμα 8: απογραφή του router σε κάθε αξιολόγηση")
+    ap.add_argument("--manifest", default=None, help="πείραμα 8: για τον πληθυσμό ανά πηγή του val")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
@@ -136,6 +141,15 @@ def main():
     print(f"arm {args.arm} · {count_params(model):,} params · {len(train):,} train / {len(val):,} val tokens "
           f"· {steps_per_epoch} steps/εποχή · {device}")
     history, t0 = [], time.time()
+    census = None
+    if args.census:
+        segs = None
+        if args.manifest:
+            src = json.load(open(args.manifest))["sources"]
+            segs = [(k, v["val_tokens"]) for k, v in src.items() if isinstance(v, dict) and "val_tokens" in v]
+        census = Census(run, cfg.side, cfg.vocab, gold, segs)
+        ev = evaluate(model, val, cfg.ctx, device, gold, raw=True)
+        census(0, 0, ev.pop("_win"), ev.pop("_toks"))
     for step, (x, y) in enumerate(batches(train, cfg.ctx, args.batch, total, args.data_seed)):
         seen = step * tokens_per_step
         if args.arm != "A":
@@ -154,7 +168,9 @@ def main():
             model.moe.som_step()
         seen += tokens_per_step
         if (step + 1) % args.eval_every == 0 or step + 1 == total:
-            ev = evaluate(model, val, cfg.ctx, device, gold)
+            ev = evaluate(model, val, cfg.ctx, device, gold, raw=census is not None)
+            if census is not None:
+                census(step + 1, seen, ev.pop("_win"), ev.pop("_toks"))
             history.append((seen, ev["val_loss"]))
             alarm = " ⚠️ ΣΥΝΑΓΕΡΜΟΣ άνεργων" if ev["idle_alarm"] else ""
             print(f"step {step + 1:5d} · {seen:,} tok · train {aux['ce'].item():.3f} · val {ev['val_loss']:.3f} "

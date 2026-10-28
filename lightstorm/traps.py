@@ -139,7 +139,16 @@ def main():
     ap.add_argument("--corpus", default=os.path.join(ROOT, "corpus_r2"))
     ap.add_argument("--manifest", default=os.path.join(ROOT, "r2_data_manifest.json"))
     ap.add_argument("--out", default=os.path.join(ROOT, "runs_r2", "traps.json"))
+    ap.add_argument("--data-only", type=int, default=0, metavar="VOCAB",
+                    help="πείραμα 8: μόνο οι παγίδες δεδομένων (πύλη πριν το training), με αυτό το vocab")
     args = ap.parse_args()
+    if args.data_only:
+        res = data_traps(args.corpus, args.manifest, args.data_only)
+        print(json.dumps(res, ensure_ascii=False), flush=True)
+        with open(args.out, "w", encoding="utf-8") as fo:
+            json.dump(res, fo, indent=1, ensure_ascii=False)
+        ok = all(res["sealed_ok"].values()) and res["max_id_ok"] and res["val_tokens_in_train_pct"] <= 1.0
+        raise SystemExit(0 if ok else 1)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     val = load_bin(os.path.join(args.corpus, "val.bin"))

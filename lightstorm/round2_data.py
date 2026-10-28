@@ -17,6 +17,7 @@ from multiprocessing import Pool
 import numpy as np
 
 from .data import is_sealed, md5, sha256, split_blocks
+from .dedup import Dedup
 from .round2_tok import W, parquet_docs, sources
 from .wiki import ROOT, elen_gold, is_val
 from tokenizer import BYTE_TOKENS, Tokenizer
@@ -33,7 +34,7 @@ def _encode(text):
     return np.array(_tok.encode(text + "\n\n"), dtype=np.uint16)
 
 
-def encode_source(name, args, ftrain, pool, t0):
+def encode_source(name, args, ftrain, pool, t0, dedup=None):
     pattern, key_col, keep = sources()[name]
     st = {"docs": 0, "chars": 0, "train_tokens": 0, "val_tokens": 0, "val_docs": 0, "byte_tokens": 0}
     val_parts, buf, done = [], [], False
@@ -58,6 +59,10 @@ def encode_source(name, args, ftrain, pool, t0):
     for item in parquet_docs(pattern, key_col, keep):
         if st["train_tokens"] >= args.cap and not is_val(item[0]):
             continue                       # το train γέμισε: διαβάζουμε μόνο για το val
+        if dedup is not None:              # πείραμα 8: διπλότυπες γραμμές έξω, πριν το is_val
+            item = (item[0], dedup(item[1]))
+            if not item[1].strip():
+                continue
         buf.append(item)
         if len(buf) == 2048:
             flush(buf)
@@ -94,6 +99,7 @@ def main():
     ap.add_argument("--gold", default=os.path.join(ROOT, "corpus", "gold_pairs.tsv"))
     ap.add_argument("--muse", default=os.path.join(W, "muse_el-en.txt"))
     ap.add_argument("--manifest", default=os.path.join(ROOT, "r2_data_manifest.json"))
+    ap.add_argument("--dedup", action="store_true", help="πείραμα 8: διπλότυπες γραμμές έξω (dedup.py)")
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     args = ap.parse_args()
 
@@ -102,12 +108,17 @@ def main():
     assert len(tok.vocab) < 2 ** 16
     os.makedirs(args.out, exist_ok=True)
     t0, vals, stats = time.time(), [], {}
+    dedup = Dedup() if args.dedup else None
     with open(os.path.join(args.out, "train.bin"), "wb") as ftrain:
         with Pool(args.workers, initializer=_init, initargs=(args.model,)) as pool:
             for name in sources():
-                val, stats[name] = encode_source(name, args, ftrain, pool, t0)
+                val, stats[name] = encode_source(name, args, ftrain, pool, t0, dedup)
                 vals.append(val)
         text = open(args.clean, encoding="utf-8").read()
+        if dedup is not None:
+            before = dedup.stats()["dropped_chars"]
+            text = dedup(text)
+            stats["clean_dedup_dropped_chars"] = dedup.stats()["dropped_chars"] - before
         ids = tok.encode(text)
         assert tok.decode(ids) == text, "round-trip απέτυχε στο CLEAN"
         train, val = split_blocks(np.array(ids, dtype=np.uint16))
@@ -138,7 +149,8 @@ def main():
     manifest = {"merges_md5": merges_md5, "vocab": len(tok.vocab), "cap_per_source": args.cap,
                 "val_cap_per_source": args.val_cap, "clean_md5": md5(args.clean), "gold_md5": md5(args.gold),
                 "muse_md5": md5(args.muse), "train_md5": md5(os.path.join(args.out, "train.bin")),
-                "val_md5": md5(os.path.join(args.out, "val.bin")), "sources": stats, "gold": gold,
+                "val_md5": md5(os.path.join(args.out, "val.bin")), "sources": stats,
+                "dedup": dedup.stats() if dedup else None, "gold": gold,
                 "seconds": round(time.time() - t0)}
     with open(args.manifest, "w", encoding="utf-8") as fo:
         json.dump(manifest, fo, indent=1, ensure_ascii=False)
