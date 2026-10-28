@@ -113,9 +113,11 @@ def data_traps(corpus, manifest_path, model_vocab):
     out = {}
     man = json.load(open(manifest_path))
     # 5. Σφραγισμένα: μόνο το hash, το περιεχόμενο δεν διαβάζεται.
-    out["sealed_ok"] = {
-        "gold_sealed.tsv": sha256(os.path.join(corpus, "gold_sealed.tsv")) == man["gold"]["greeklish"]["sealed_sha256"],
-        "gold_elen_sealed.tsv": sha256(os.path.join(corpus, "gold_elen_sealed.tsv")) == man["gold"]["elen"]["sealed_sha256"]}
+    #    Αν τα σφραγισμένα δεν υπάρχουν καθόλου (π.χ. στο Colab, όπου δεν ανεβαίνουν), γράφεται None.
+    check = lambda f, k: (sha256(os.path.join(corpus, f)) == man["gold"][k]["sealed_sha256"]
+                          if os.path.exists(os.path.join(corpus, f)) else None)
+    out["sealed_ok"] = {"gold_sealed.tsv": check("gold_sealed.tsv", "greeklish"),
+                        "gold_elen_sealed.tsv": check("gold_elen_sealed.tsv", "elen")}
     # 6. Επικάλυψη train/val: κομμάτια του val που υπάρχουν αυτούσια στο train. Το train κόβεται ανά STRIDE και το val
     #    ελέγχεται σε κάθε θέση, οπότε πιάνεται κάθε κοινό κομμάτι μήκους >= WINDOW + STRIDE - 1 tokens.
     train = np.fromfile(os.path.join(corpus, "train.bin"), dtype=np.uint16)
@@ -147,7 +149,7 @@ def main():
         print(json.dumps(res, ensure_ascii=False), flush=True)
         with open(args.out, "w", encoding="utf-8") as fo:
             json.dump(res, fo, indent=1, ensure_ascii=False)
-        ok = all(res["sealed_ok"].values()) and res["max_id_ok"] and res["val_tokens_in_train_pct"] <= 1.0
+        ok = all(v is not False for v in res["sealed_ok"].values()) and res["max_id_ok"] and res["val_tokens_in_train_pct"] <= 1.0
         raise SystemExit(0 if ok else 1)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"

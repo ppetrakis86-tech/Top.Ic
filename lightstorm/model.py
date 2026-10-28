@@ -39,6 +39,7 @@ class Config:
     ema_alpha: float = 1e-3   # C1/C2
     beta: float = 0.3         # C1/C2
     seed: int = 0             # αρχικά κλειδιά του SOM (seed 0 = τα κλειδιά του πρώτου τρεξίματος)
+    key_init: str = "white"   # πείραμα 9: "smooth" = χαρτογραφικός θόρυβος (ομαλό τυχαίο έδαφος)
 
 
 class Attention(nn.Module):
@@ -109,6 +110,21 @@ class SoftmaxMoE(nn.Module):
         return y.reshape(shape), {"winner": idx[:, 0], "members": idx, "lb": lb}
 
 
+def smooth_keys(side, d, g, octaves=((1, 1.0), (2, 0.5))):
+    """Πείραμα 9: κάθε διάσταση του κλειδιού είναι ένα ομαλό τυχαίο «έδαφος» πάνω στον τόρο (σαν τον θόρυβο του Minecraft).
+    Άθροισμα περιοδικών κυμάτων χαμηλής συχνότητας με τυχαίο πλάτος και φάση· χωρίς ετικέτες, μόνο ομαλότητα.
+    Κανονικοποιημένο ώστε κάθε διάσταση να έχει std 1, όπως ο λευκός θόρυβος."""
+    r, c = torch.meshgrid(torch.arange(side), torch.arange(side), indexing="ij")
+    r, c = r.reshape(-1).float(), c.reshape(-1).float()
+    out = torch.zeros(side * side, d)
+    for f, amp in octaves:
+        for fr, fc in ((f, 0), (0, f), (f, f), (f, -f)):
+            a = torch.randn(d, generator=g) * amp
+            ph = torch.rand(d, generator=g) * 2 * math.pi
+            out += a * torch.cos(2 * math.pi * (fr * r + fc * c)[:, None] / side + ph)
+    return (out - out.mean(0)) / out.std(0).clamp_min(1e-8)
+
+
 class SomMoE(nn.Module):
     """Σκέλη B / C1 / C2: ο νικητής βγαίνει από ευκλείδεια απόσταση στα κλειδιά.
 
@@ -121,7 +137,8 @@ class SomMoE(nn.Module):
         self.cfg, self.n = cfg, cfg.side ** 2
         self.experts = Experts(self.n, cfg.d_model, cfg.expert_hidden)
         g = torch.Generator().manual_seed(1234 + cfg.seed)
-        self.register_buffer("keys", torch.randn(self.n, cfg.d_model, generator=g) * 0.1)
+        keys = smooth_keys(cfg.side, cfg.d_model, g) if cfg.key_init == "smooth" else torch.randn(self.n, cfg.d_model, generator=g)
+        self.register_buffer("keys", keys * 0.1)
         self.register_buffer("D0", metrics.torus_distances(cfg.side))
         self.register_buffer("cross0", metrics.cross(cfg.side))
         self.register_buffer("D", self.D0.clone())
