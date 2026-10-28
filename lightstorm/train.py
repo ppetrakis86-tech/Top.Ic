@@ -179,7 +179,7 @@ def main():
                   f"· νικ/γειτ/άνεργ {ev['winners']}/{ev['neighbours']}/{ev['idle']} "
                   f"· gold {ev['gold_open']['ratio']:.3f}"
                   + (f" · el↔en {ev['gold_elen']['ratio']:.3f}" if "gold_elen" in ev else "")
-                  + f" · {time.time() - t0:.0f}s{alarm}")
+                  + f" · {time.time() - t0:.0f}s{alarm}", flush=True)
         if (step + 1) % steps_per_epoch == 0 or step + 1 == total:
             epoch = math.ceil((step + 1) / steps_per_epoch)
             ev = evaluate(model, val, cfg.ctx, device, gold)
