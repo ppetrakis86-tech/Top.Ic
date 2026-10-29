@@ -130,6 +130,8 @@ def main():
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")   # πριν αγγίξουμε το CUDA
         torch.use_deterministic_algorithms(True, warn_only=True)
         torch.backends.cudnn.benchmark = False
+        torch.backends.cuda.enable_flash_sdp(False)                   # το backward της attention με flash/mem-efficient
+        torch.backends.cuda.enable_mem_efficient_sdp(False)           # δεν είναι ντετερμινιστικό· μένει το math
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     key_seed = args.seed if args.key_seed is None else args.key_seed
