@@ -3,6 +3,7 @@
     python3 -m lightstorm.train --arm B            # 2 εποχές, checkpoint κάθε εποχή
 """
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -118,9 +119,17 @@ def main():
     ap.add_argument("--manifest", default=None, help="πείραμα 8: για τον πληθυσμό ανά πηγή του val")
     ap.add_argument("--ckpt-every", type=int, default=0,
                     help="checkpoint συνέχειας κάθε τόσα βήματα (<out>/<arm>/ckpt.pt). Αν υπάρχει, το run συνεχίζει από εκεί")
+    ap.add_argument("--deterministic", action="store_true",
+                    help="ντετερμινιστικοί αλγόριθμοι του PyTorch (ίδιο run = ίδια bits στην ίδια κάρτα)")
+    ap.add_argument("--trace", default=None,
+                    help="αρχείο: σε κάθε βήμα loss (hex) + hash των νικητών, για να βρούμε πού χωρίζουν δύο runs")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
+    if args.deterministic:
+        os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")   # πριν αγγίξουμε το CUDA
+        torch.use_deterministic_algorithms(True, warn_only=True)
+        torch.backends.cudnn.benchmark = False
     torch.manual_seed(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
     key_seed = args.seed if args.key_seed is None else args.key_seed
@@ -154,6 +163,7 @@ def main():
         opt.load_state_dict(resume["opt"])
         start, history, t0 = resume["step"], resume["history"], time.time() - resume["elapsed"]
         print(f"↻ συνέχεια από το βήμα {start}", flush=True)
+    trace = open(args.trace, "a" if start else "w", encoding="utf-8") if args.trace else None
     census = None
     if args.census:
         segs = None
@@ -180,6 +190,9 @@ def main():
         opt.step()
         if args.arm != "A":
             model.moe.som_step()
+        if trace is not None:
+            win = aux["winner"].to(torch.int16).cpu().numpy().tobytes()
+            trace.write(f"{step + 1}\t{loss.item().hex()}\t{hashlib.sha1(win).hexdigest()[:16]}\n")
         seen += tokens_per_step
         if (step + 1) % args.eval_every == 0 or step + 1 == total:
             ev = evaluate(model, val, cfg.ctx, device, gold, raw=census is not None)
