@@ -22,10 +22,12 @@ def load_bin(path):
     return torch.from_numpy(np.fromfile(path, dtype=np.uint16).astype(np.int64))
 
 
-def batches(data, ctx, batch, steps, seed):
-    """Τυχαία παράθυρα, ίδια για κάθε σκέλος αφού το seed είναι ίδιο."""
+def batches(data, ctx, batch, steps, seed, skip=0):
+    """Τυχαία παράθυρα, ίδια για κάθε σκέλος αφού το seed είναι ίδιο. skip: συνέχεια από checkpoint, ίδια σειρά."""
     g = torch.Generator().manual_seed(seed)
-    for _ in range(steps):
+    for _ in range(skip):
+        torch.randint(0, len(data) - ctx - 1, (batch,), generator=g)
+    for _ in range(steps - skip):
         start = torch.randint(0, len(data) - ctx - 1, (batch,), generator=g)
         x = torch.stack([data[s:s + ctx] for s in start])
         y = torch.stack([data[s + 1:s + ctx + 1] for s in start])
@@ -114,6 +116,8 @@ def main():
     ap.add_argument("--k", type=int, choices=(5, 9), default=5, help="πείραμα 10: μέλη ανά token (A top-k, B σταυρός ή 3×3)")
     ap.add_argument("--census", action="store_true", help="πείραμα 8: απογραφή του router σε κάθε αξιολόγηση")
     ap.add_argument("--manifest", default=None, help="πείραμα 8: για τον πληθυσμό ανά πηγή του val")
+    ap.add_argument("--ckpt-every", type=int, default=0,
+                    help="checkpoint συνέχειας κάθε τόσα βήματα (<out>/<arm>/ckpt.pt). Αν υπάρχει, το run συνεχίζει από εκεί")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
@@ -142,17 +146,25 @@ def main():
     os.makedirs(run, exist_ok=True)
     print(f"arm {args.arm} · {count_params(model):,} params · {len(train):,} train / {len(val):,} val tokens "
           f"· {steps_per_epoch} steps/εποχή · {device}")
-    history, t0 = [], time.time()
+    history, t0, start = [], time.time(), 0
+    ckpt = os.path.join(run, "ckpt.pt")
+    resume = torch.load(ckpt, map_location=device, weights_only=False) if args.ckpt_every and os.path.exists(ckpt) else None
+    if resume is not None:
+        model.load_state_dict(resume["model"])
+        opt.load_state_dict(resume["opt"])
+        start, history, t0 = resume["step"], resume["history"], time.time() - resume["elapsed"]
+        print(f"↻ συνέχεια από το βήμα {start}", flush=True)
     census = None
     if args.census:
         segs = None
         if args.manifest:
             src = json.load(open(args.manifest))["sources"]
             segs = [(k, v["val_tokens"]) for k, v in src.items() if isinstance(v, dict) and "val_tokens" in v]
-        census = Census(run, cfg.side, cfg.vocab, gold, segs)
-        ev = evaluate(model, val, cfg.ctx, device, gold, raw=True)
-        census(0, 0, ev.pop("_win"), ev.pop("_toks"))
-    for step, (x, y) in enumerate(batches(train, cfg.ctx, args.batch, total, args.data_seed)):
+        census = Census(run, cfg.side, cfg.vocab, gold, segs, state=resume and resume.get("census"))
+        if resume is None:
+            ev = evaluate(model, val, cfg.ctx, device, gold, raw=True)
+            census(0, 0, ev.pop("_win"), ev.pop("_toks"))
+    for step, (x, y) in enumerate(batches(train, cfg.ctx, args.batch, total, args.data_seed, skip=start), start=start):
         seen = step * tokens_per_step
         if args.arm != "A":
             model.moe.sigma, model.moe.eta = schedule(seen, steps_per_epoch * tokens_per_step,
@@ -180,6 +192,10 @@ def main():
                   f"· gold {ev['gold_open']['ratio']:.3f}"
                   + (f" · el↔en {ev['gold_elen']['ratio']:.3f}" if "gold_elen" in ev else "")
                   + f" · {time.time() - t0:.0f}s{alarm}", flush=True)
+        if args.ckpt_every and (step + 1) % args.ckpt_every == 0 and step + 1 < total:
+            torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "step": step + 1, "history": history,
+                        "elapsed": time.time() - t0, "census": census and census.state()}, ckpt + ".tmp")
+            os.replace(ckpt + ".tmp", ckpt)       # ατομικά: αν πέσει στη μέση, μένει το προηγούμενο
         if (step + 1) % steps_per_epoch == 0 or step + 1 == total:
             epoch = math.ceil((step + 1) / steps_per_epoch)
             ev = evaluate(model, val, cfg.ctx, device, gold)
@@ -193,6 +209,8 @@ def main():
                             "args": vars(args), "bench": ev}, os.path.join(run, f"epoch{epoch}.pt"))
             with open(os.path.join(run, f"epoch{epoch}.json"), "w", encoding="utf-8") as f:
                 json.dump(ev, f, indent=1, ensure_ascii=False)
+            if step + 1 == total and os.path.exists(ckpt):
+                os.remove(ckpt)
             print(f"💾 checkpoint εποχή {epoch} · shuffle Δ {ev['shuffle'].get('delta_mean', 0):+.4f}")
 
 

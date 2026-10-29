@@ -19,14 +19,22 @@ MIN_COUNT = 5           # για τη μετακόμιση μετράνε μόν
 
 
 class Census:
-    def __init__(self, run_dir, side, vocab, gold_sets, segments=None):
+    def __init__(self, run_dir, side, vocab, gold_sets, segments=None, state=None):
         self.path = os.path.join(run_dir, "census.jsonl")
         self.homes_path = os.path.join(run_dir, "census_homes.npy")
         self.side, self.vocab, self.gold = side, vocab, gold_sets
         self.segments = segments or []          # [(όνομα, πλήθος tokens στο val)], με τη σειρά του val.bin
         self.D = metrics.torus_distances(side).numpy()
         self.prev, self.homes = None, []
-        open(self.path, "w").close()
+        if state is None:
+            open(self.path, "w").close()
+        else:                                   # συνέχεια από checkpoint: κρατάμε ό,τι γράφτηκε ως το βήμα του
+            self.prev, self.homes, self.step = state["prev"], list(state["homes"]), state["step"]
+            lines = [l for l in open(self.path, encoding="utf-8") if json.loads(l)["step"] <= state["step"]]
+            open(self.path, "w", encoding="utf-8").writelines(lines)
+
+    def state(self):
+        return {"prev": self.prev, "homes": self.homes, "step": self.step}
 
     def __call__(self, step, seen, win, toks):
         from .traps import ratio                # εδώ, για να μη γίνει κυκλικό import με το train
@@ -37,6 +45,7 @@ class Census:
         count = hist.sum(1)
         home = hist.argmax(1)
         home[count == 0] = -1
+        self.step = step
         out = {"step": step, "tokens": seen, "population": np.bincount(win, minlength=n).tolist()}
 
         p = np.asarray(out["population"]) / max(1, len(win))
