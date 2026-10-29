@@ -123,6 +123,8 @@ def main():
                     help="ντετερμινιστικοί αλγόριθμοι του PyTorch (ίδιο run = ίδια bits στην ίδια κάρτα)")
     ap.add_argument("--trace", default=None,
                     help="αρχείο: σε κάθε βήμα loss (hex) + hash των νικητών, για να βρούμε πού χωρίζουν δύο runs")
+    ap.add_argument("--nudge", type=float, default=0.0,
+                    help="πείραμα 11: +nudge σε ένα βάρος της 1ης attention στην αρχή (τεστ πεταλούδας)")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
@@ -141,6 +143,9 @@ def main():
     if args.size != "7M" and args.lr == 1e-3:
         args.lr = 1e-3 * 256 / d          # πείραμα 3: lr ∝ 1/πλάτος, ορισμένο στο METRICS.md
     model = Lightstorm(cfg).to(device)
+    if args.nudge:
+        with torch.no_grad():
+            model.blocks[0].attn.qkv.weight[0, 0] += args.nudge    # το βλέπει κάθε token
     train = load_bin(os.path.join(args.corpus, "train.bin"))
     val = load_bin(os.path.join(args.corpus, "val.bin"))
     gold = {"gold_open": read_gold(os.path.join(args.corpus, "gold_open.tsv"))}     # ΠΟΤΕ το sealed εδώ
