@@ -208,7 +208,7 @@ def main():
         opt.load_state_dict(resume["opt"])
         start, history, t0 = resume["step"], resume["history"], time.time() - resume["elapsed"]
         print(f"↻ συνέχεια από το βήμα {start}", flush=True)
-    trace = open(args.trace, "a" if start else "w", encoding="utf-8") if args.trace else None
+    trace = open(args.trace, "a" if start else "w", encoding="utf-8", buffering=1) if args.trace else None
     census = None
     if args.census:
         if segs is None and args.manifest:
