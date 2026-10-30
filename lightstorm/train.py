@@ -23,6 +23,34 @@ def load_bin(path):
     return torch.from_numpy(np.fromfile(path, dtype=np.uint16).astype(np.int64))
 
 
+def subset(train, val, manifest, keep=None, frac=1.0, block=8192):
+    """Πείραμα 13: μόνο οι πηγές keep (σειρά του manifest), και από το train ισόποσα μπλοκ ανά πηγή σε ίσες
+    αποστάσεις, ώστε το σύνολο να είναι frac × όλο το train (ίδιο πλήθος tokens όποιες πηγές κι αν μείνουν).
+    Το val μένει ολόκληρο ανά κρατημένη πηγή. train=None: μόνο το val (για τις παγίδες)."""
+    src = [(k, v) for k, v in json.load(open(manifest))["sources"].items() if isinstance(v, dict) and "train_tokens" in v]
+    keep = keep or [k for k, _ in src]
+    assert set(keep) <= {k for k, _ in src}, f"άγνωστη πηγή: {set(keep) - {k for k, _ in src}}"
+    assert sum(v["val_tokens"] for _, v in src) == len(val), "το val δεν ταιριάζει με το manifest"
+    full = sum(v["train_tokens"] for _, v in src)
+    assert train is None or full == len(train), "το train δεν ταιριάζει με το manifest"
+    ratio = frac * full / sum(v["train_tokens"] for k, v in src if k in keep)
+    assert train is None or 0 < ratio <= 1, f"δεν φτάνουν τα tokens: λόγος {ratio:.3f}"
+    tr, va, segs, a, b = [], [], [], 0, 0
+    for k, v in src:
+        if k in keep:
+            if train is not None:
+                n = v["train_tokens"] // block
+                idx = (np.arange(round(n * ratio)) / ratio).astype(np.int64) if ratio < 1 else np.arange(n)
+                tr += [train[a + i * block:a + (i + 1) * block] for i in idx]
+                if ratio == 1:
+                    tr.append(train[a + n * block:a + v["train_tokens"]])     # η ουρά της πηγής
+            va.append(val[b:b + v["val_tokens"]])
+            segs.append((k, v["val_tokens"]))
+        a += v["train_tokens"]
+        b += v["val_tokens"]
+    return (torch.cat(tr) if train is not None else None), torch.cat(va), segs
+
+
 def batches(data, ctx, batch, steps, seed, skip=0):
     """Τυχαία παράθυρα, ίδια για κάθε σκέλος αφού το seed είναι ίδιο. skip: συνέχεια από checkpoint, ίδια σειρά."""
     g = torch.Generator().manual_seed(seed)
@@ -125,6 +153,10 @@ def main():
                     help="αρχείο: σε κάθε βήμα loss (hex) + hash των νικητών, για να βρούμε πού χωρίζουν δύο runs")
     ap.add_argument("--nudge", type=float, default=0.0,
                     help="πείραμα 11: +nudge σε ένα βάρος της 1ης attention στην αρχή (τεστ πεταλούδας)")
+    ap.add_argument("--train-frac", type=float, default=1.0,
+                    help="πείραμα 13: ποσοστό του όλου train (ισόποσα μπλοκ ανά πηγή), θέλει --manifest")
+    ap.add_argument("--sources", default=None,
+                    help="πείραμα 13: π.χ. wiki_el,wiki_en,uesp_en,uesp_el (και το val μόνο από αυτές), θέλει --manifest")
     ap.add_argument("--max-steps", type=int, default=0, help="μόνο για δοκιμές")
     args = ap.parse_args()
 
@@ -148,6 +180,12 @@ def main():
             model.blocks[0].attn.qkv.weight[0, 0] += args.nudge    # το βλέπει κάθε token
     train = load_bin(os.path.join(args.corpus, "train.bin"))
     val = load_bin(os.path.join(args.corpus, "val.bin"))
+    segs = None
+    if args.train_frac < 1 or args.sources:
+        assert args.manifest, "--train-frac/--sources θέλουν --manifest"
+        n0 = len(train)
+        train, val, segs = subset(train, val, args.manifest, args.sources and args.sources.split(","), args.train_frac)
+        print(f"υποσύνολο: {len(train):,} από {n0:,} train tokens · πηγές {[k for k, _ in segs]}", flush=True)
     gold = {"gold_open": read_gold(os.path.join(args.corpus, "gold_open.tsv"))}     # ΠΟΤΕ το sealed εδώ
     if os.path.exists(os.path.join(args.corpus, "gold_elen.tsv")):                # πείραμα 6: el↔en
         gold["gold_elen"] = read_gold(os.path.join(args.corpus, "gold_elen.tsv"))
@@ -173,8 +211,7 @@ def main():
     trace = open(args.trace, "a" if start else "w", encoding="utf-8") if args.trace else None
     census = None
     if args.census:
-        segs = None
-        if args.manifest:
+        if segs is None and args.manifest:
             src = json.load(open(args.manifest))["sources"]
             segs = [(k, v["val_tokens"]) for k, v in src.items() if isinstance(v, dict) and "val_tokens" in v]
         census = Census(run, cfg.side, cfg.vocab, gold, segs, state=resume and resume.get("census"))

@@ -18,7 +18,7 @@ import torch
 from . import metrics
 from .data import sha256
 from .model import Config, Lightstorm
-from .train import load_bin, read_gold
+from .train import load_bin, read_gold, subset
 from .wiki import ROOT
 
 N_LAYOUTS = 1000        # τυχαίες τοποθετήσεις των ειδικών στον τόρο (παγίδα 1)
@@ -163,7 +163,11 @@ def main():
         for arm in ("A", "B", "E"):
             if not os.path.exists(os.path.join(run, arm, "epoch1.pt")):
                 continue
-            r = run_traps(run, arm, val, golds, counts, device)
+            ra = torch.load(os.path.join(run, arm, "epoch1.pt"), map_location="cpu", weights_only=False).get("args", {})
+            v = val
+            if ra.get("sources"):                 # πείραμα 13: το val μόνο από τις πηγές του run
+                v = subset(None, val, args.manifest, ra["sources"].split(","))[1]
+            r = run_traps(run, arm, v, golds, np.bincount(v.numpy(), minlength=2 ** 16), device)
             res["runs"][f"{os.path.basename(run)}/{arm}"] = r
             vocab = vocab or torch.load(os.path.join(run, arm, "epoch1.pt"), map_location="cpu")["cfg"]["vocab"]
             print(os.path.basename(run), arm, json.dumps({k: {kk: (round(vv, 3) if isinstance(vv, float) else vv)

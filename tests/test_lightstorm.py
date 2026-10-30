@@ -142,3 +142,38 @@ class TestModel(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSubset(unittest.TestCase):
+    """Πείραμα 13: υποσύνολο του train ανά πηγή."""
+    def setUp(self):
+        import json, tempfile
+        self.sizes = {"wiki_el": (40000, 300), "wiki_en": (30000, 200), "greeklish": (20000, 100), "clean": (10500, 50)}
+        self.train = torch.cat([torch.full((t,), i) for i, (t, _) in enumerate(self.sizes.values())])
+        self.val = torch.cat([torch.full((v,), i) for i, (_, v) in enumerate(self.sizes.values())])
+        self.man = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False).name
+        json.dump({"sources": {**{k: {"train_tokens": t, "val_tokens": v} for k, (t, v) in self.sizes.items()},
+                               "clean_dedup_dropped_chars": 5}}, open(self.man, "w"))
+
+    def test_full_is_identity(self):
+        from lightstorm.train import subset
+        tr, va, segs = subset(self.train, self.val, self.man)
+        self.assertTrue(torch.equal(tr, self.train) and torch.equal(va, self.val))
+        self.assertEqual([k for k, _ in segs], list(self.sizes))
+
+    def test_frac_and_sources(self):
+        from lightstorm.train import subset
+        tr, va, segs = subset(self.train, self.val, self.man, frac=0.25, block=1000)
+        self.assertAlmostEqual(len(tr) / len(self.train), 0.25, delta=0.03)
+        for i, (t, _) in enumerate(self.sizes.values()):      # κάθε πηγή στο ίδιο ποσοστό
+            self.assertAlmostEqual((tr == i).sum().item() / t, 0.25, delta=0.06)
+        keep = ["wiki_el", "wiki_en"]
+        tr2, va2, segs2 = subset(self.train, self.val, self.man, keep, frac=0.25, block=1000)
+        self.assertAlmostEqual(len(tr2) / len(tr), 1, delta=0.05)          # ίδιο πλήθος tokens, άλλες πηγές
+        self.assertEqual(set(tr2.unique().tolist()), {0, 1})
+        self.assertEqual(len(va2), 500)
+        self.assertEqual(segs2, [("wiki_el", 300), ("wiki_en", 200)])
+        _, va3, _ = subset(None, self.val, self.man, keep)
+        self.assertTrue(torch.equal(va3, va2))
+        with self.assertRaises(AssertionError):
+            subset(self.train, self.val, self.man, ["clean"], frac=0.25)   # δεν φτάνουν
