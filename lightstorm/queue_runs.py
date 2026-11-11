@@ -2,7 +2,7 @@
 (με συνέχεια από checkpoint) όποιο σταμάτησε χωρίς να τελειώσει, και γράφει queue_done.json στο τέλος.
 
     python -m lightstorm.queue_runs --jobs jobs.json --state DIR
-jobs.json: [{"out": ".../s0", "arm": "A", "gb": 3.2, "args": [...]}, ...] (args: ό,τι παίρνει το lightstorm.train)
+jobs.json: [{"out": ".../s0", "arm": "A", "gb": 3.2, "args": [...]}, ...] (args: ό,τι παίρνει το lightstorm.train)\nΠροαιρετικά: "module" (π.χ. lightstorm.finetune, G2) και "done" (αρχείο τέλους, default epoch1.json).
 """
 import argparse
 import json
@@ -38,7 +38,7 @@ def run_name(j):
 
 
 def done(job):
-    return os.path.exists(os.path.join(job["out"], job["arm"], "epoch1.json"))
+    return os.path.exists(os.path.join(job["out"], job["arm"], job.get("done", "epoch1.json")))
 
 
 def main():
@@ -91,7 +91,7 @@ def main():
             if running and (used + j["gb"] > budget or free_ram_gb() < a.min_ram):
                 break                                  # με τη σειρά: τα μεγάλα πρώτα, κανείς δεν προσπερνά
             os.makedirs(j["out"], exist_ok=True)
-            cmd = [sys.executable, "-m", "lightstorm.train", "--arm", j["arm"], "--out", j["out"],
+            cmd = [sys.executable, "-m", j.get("module", "lightstorm.train"), "--arm", j["arm"], "--out", j["out"],
                    "--trace", os.path.join(logs, f"{run_name(j)}.trace")] + j["args"]
             running[i] = subprocess.Popen(cmd, stdout=open(os.path.join(logs, f"{run_name(j)}.log"), "a"),
                                           stderr=subprocess.STDOUT, env=env)
