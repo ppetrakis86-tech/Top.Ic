@@ -263,6 +263,7 @@ def main():
             keep = epoch <= 2 or epoch % 10 == 0 if args.size == "7M" else False   # μεγάλα μοντέλα: μόνο το τελευταίο
             if keep or step + 1 == total:     # τα .pt είναι ~90 MB στο 7M, ~1,3 GB στο 110M
                 torch.save({"model": model.state_dict(), "opt": opt.state_dict(), "cfg": cfg.__dict__,
+                            "sigma": getattr(model.moe, "sigma", None),
                             "args": vars(args), "bench": ev}, os.path.join(run, f"epoch{epoch}.pt"))
             with open(os.path.join(run, f"epoch{epoch}.json"), "w", encoding="utf-8") as f:
                 json.dump(ev, f, indent=1, ensure_ascii=False)

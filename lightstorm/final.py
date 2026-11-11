@@ -11,7 +11,7 @@ import os
 
 import torch
 
-from .model import Config, Lightstorm
+from .model import load_checkpoint
 from .train import ROOT, evaluate, load_bin, read_gold
 
 
@@ -28,9 +28,7 @@ def main():
     val = load_bin(os.path.join(ROOT, "corpus", "val.bin"))
     device = "cuda" if torch.cuda.is_available() else "cpu"
     for path in args.ckpts:
-        ck = torch.load(path, map_location=device)
-        model = Lightstorm(Config(**ck["cfg"])).to(device)
-        model.load_state_dict(ck["model"])
+        model, ck = load_checkpoint(path, device)
         ev = evaluate(model, val, model.cfg.ctx, device, {"gold_sealed": gold})
         print(path, json.dumps(ev["gold_sealed"]), sep="\t")
 

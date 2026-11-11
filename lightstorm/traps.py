@@ -17,7 +17,7 @@ import torch
 
 from . import metrics
 from .data import sha256
-from .model import Config, Lightstorm
+from .model import load_checkpoint
 from .train import load_bin, read_gold, subset
 from .wiki import ROOT
 
@@ -30,10 +30,7 @@ STRIDE = 32
 @torch.no_grad()
 def homes(ck_path, val, device):
     """Διεύθυνση κάθε token (mode του νικητή) πάνω στο val, όπως στο train.evaluate."""
-    ck = torch.load(ck_path, map_location=device)
-    m = Lightstorm(Config(**ck["cfg"])).to(device)
-    m.load_state_dict(ck["model"])
-    m.eval()
+    m, ck = load_checkpoint(ck_path, device)
     ctx, n = m.cfg.ctx, (len(val) - 1) // m.cfg.ctx
     xs, ys = val[:n * ctx].view(n, ctx), val[1:n * ctx + 1].view(n, ctx)
     win, tok = [], []

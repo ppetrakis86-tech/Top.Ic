@@ -1,7 +1,7 @@
 """G1α: ζουμ. Έτοιμα checkpoints, val με k=5 (όπως εκπαιδεύτηκαν) και k=1 (ένας ειδικός). Χωρίς training.
 
 B k=1: μόνο ο νικητής (cross0[:, :1] = ο ίδιος), βάρος 1. A k=1: top-1, βάρος κανονικοποιημένο στο 1.
-Το σ του B δεν είναι buffer: παίρνεται από bench["sigma"] του checkpoint.
+Το σ του B: model.load_checkpoint (τελικό σ από το checkpoint).
 
     python -m lightstorm.zoom --runs DIR [DIR ...] --corpus corpus_r3 --out zoom.json
 DIR: φάκελος με s*/{A,B}/epoch1.pt.
@@ -13,7 +13,7 @@ import os
 
 import torch
 
-from .model import Config, Lightstorm
+from .model import load_checkpoint
 from .train import evaluate, load_bin
 
 
@@ -27,12 +27,8 @@ def set_k(m, k):
 
 @torch.no_grad()
 def run(ck_path, val, device):
-    ck = torch.load(ck_path, map_location=device, weights_only=False)
-    m = Lightstorm(Config(**ck["cfg"])).to(device).eval()
-    m.load_state_dict(ck["model"])
+    m, ck = load_checkpoint(ck_path, device)
     bench = ck.get("bench", {})
-    if m.cfg.arm != "A":
-        m.moe.sigma = bench["sigma"]
     out = {"arm": m.cfg.arm, "side": m.cfg.side, "sigma": getattr(m.moe, "sigma", None), "bench_val": bench.get("val_loss")}
     for k in (5, 1):
         set_k(m, k)

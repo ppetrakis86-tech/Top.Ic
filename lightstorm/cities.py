@@ -21,7 +21,7 @@ import torch
 import torch.nn.functional as F
 
 from . import metrics
-from .model import Config, Lightstorm
+from .model import load_checkpoint
 from .train import load_bin
 
 
@@ -33,9 +33,7 @@ def all_experts(ex, x):
 
 @torch.no_grad()
 def analyse(ck_path, val, n_win, device):
-    ck = torch.load(ck_path, map_location=device, weights_only=False)
-    m = Lightstorm(Config(**ck["cfg"])).to(device).eval()
-    m.load_state_dict(ck["model"])
+    m, ck = load_checkpoint(ck_path, device)                       # με το τελικό σ (13β το έχανε)
     moe, side, ctx = m.moe, m.cfg.side, m.cfg.ctx
     starts = np.linspace(0, len(val) - ctx - 2, n_win).astype(int)
     xs = torch.stack([val[s:s + ctx] for s in starts]).to(device)
@@ -70,7 +68,7 @@ def analyse(ck_path, val, n_win, device):
     off = ~torch.eye(n, dtype=torch.bool, device=device)
     D = metrics.torus_distances(side).to(device)
     near = (D > 0) & (D <= 1.0001)
-    return {"side": side, "d_model": m.cfg.d_model, "arm": m.cfg.arm, "loss_base": loss["base"],
+    return {"sigma": getattr(moe, "sigma", None), "side": side, "d_model": m.cfg.d_model, "arm": m.cfg.arm, "loss_base": loss["base"],
             "d_zero": loss["zero"] - loss["base"], "d_one_city": loss["one_city"] - loss["base"],
             "cos_all": cos[off].mean().item(), "cos_near": cos[near].mean().item(),
             "shuffle": ck.get("bench", {}).get("shuffle", {}).get("delta_mean")}

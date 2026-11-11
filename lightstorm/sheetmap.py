@@ -12,7 +12,7 @@ import sys
 import torch
 
 from . import metrics
-from .model import Config, Lightstorm
+from .model import load_checkpoint
 from .train import ROOT, load_bin
 
 
@@ -51,11 +51,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     val = load_bin(os.path.join(ROOT, "corpus", "val.bin"))
     for path in sys.argv[1:]:
-        ck = torch.load(path, map_location=device)
-        model = Lightstorm(Config(**ck["cfg"])).to(device)
-        model.load_state_dict(ck["model"])
-        if model.cfg.arm != "A":
-            model.moe.sigma = ck["bench"].get("sigma", 0.7)
+        model, ck = load_checkpoint(path, device)
         print(f"== {path} (σκέλος {model.cfg.arm})")
         print(draw(winner_counts(model, val, model.cfg.ctx, device)))
         print()

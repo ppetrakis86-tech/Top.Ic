@@ -267,3 +267,14 @@ def schedule(tokens_seen, tokens_per_epoch, sigma=(2.5, 0.7), eta=(0.1, 0.01)):
 
 def count_params(model):
     return sum(p.numel() for p in model.parameters())
+
+
+def load_checkpoint(path, device="cpu"):
+    """Φορτώνει epochN.pt με το ΤΕΛΙΚΟ σ του B. Το σ δεν είναι buffer (δεν είναι στο state_dict):
+    παίρνεται από ck["sigma"] ή ck["bench"]["sigma"]· αλλιώς 0,7 (το σ μετά την 1η εποχή, schedule)."""
+    ck = torch.load(path, map_location=device, weights_only=False)
+    m = Lightstorm(Config(**ck["cfg"])).to(device)
+    m.load_state_dict(ck["model"])
+    if m.cfg.arm != "A":
+        m.moe.sigma = ck.get("sigma") or ck.get("bench", {}).get("sigma") or 0.7
+    return m.eval(), ck
