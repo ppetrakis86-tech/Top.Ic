@@ -1,3 +1,5 @@
+> **Top.Ic / Lightstorm (τοπογραφικό MoE):** το πείραμα ολοκληρώθηκε 12/11/2026. Πορεία, αποτελέσματα και πόρισμα: [`REPORT.md`](REPORT.md) · προεγγραφές: [`METRICS.md`](METRICS.md).
+
 # mini-bpe-tokenizer
 
 Ένας μικρός tokenizer **Byte Pair Encoding (BPE)** σε καθαρή Python, χωρίς εξαρτήσεις. Φτιαγμένος για να καταλάβω πώς δουλεύουν οι tokenizers των γλωσσικών μοντέλων.
