@@ -78,6 +78,29 @@ def spread(roots, corpus, manifest, n_tokens=200_000):
     return out
 
 
+def elen_table(roots, corpus, manifest, rows):
+    """Αναφορά (#04, 12/11): el↔en (παγίδες, χωρίς ίδιο ειδικό) δίπλα σε N_eff(uesp_en) και Δ, ανά seed."""
+    import subprocess
+    import sys
+    out = ["el↔en (B, χωρίς ίδιο ειδικό · A σε παρένθεση) / N_eff uesp_en (B) / Δ"]
+    for root in roots:
+        f = os.path.join(root, "traps.json")
+        if not os.path.exists(f):
+            subprocess.run([sys.executable, "-m", "lightstorm.traps", "--runs", root, "--corpus", corpus,
+                            "--manifest", manifest, "--out", f], capture_output=True)
+        try:
+            t = json.load(open(f))["runs"]
+        except (OSError, KeyError, ValueError):
+            out.append(f"{root}: παγίδες απέτυχαν")
+            continue
+        for (tag, s), (d, nb, _) in sorted(rows.items(), key=lambda kv: int(kv[0][1][1:])):
+            if f"{s}/B" in t and os.path.isdir(os.path.join(root, s)):
+                eb = t[f"{s}/B"]["elen"]["ratio_no_same"]
+                ea = t.get(f"{s}/A", {}).get("elen", {}).get("ratio_no_same", float("nan"))
+                out.append(f"{s:3s} · el↔en B {eb:.3f} (A {ea:.3f}) · N_eff {nb:5.2f} · Δ {d:+.4f}")
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True)
@@ -123,6 +146,7 @@ def main():
     if os.path.exists(os.path.join(a.corpus, "train.bin")) and os.path.exists(a.manifest):
         try:
             lines += spread([r for r in (a.old_root, a.root) if r], a.corpus, a.manifest)
+            lines += elen_table([r for r in (a.old_root, a.root) if r], a.corpus, a.manifest, rows)
         except Exception as e:                    # η αναφορά δεν ρίχνει την ετυμηγορία
             lines.append(f"N_eff ανά πηγή: ΣΦΑΛΜΑ {e}")
     txt = "\n".join(lines)
