@@ -51,11 +51,40 @@ def load(root):
     return out
 
 
+def spread(roots, corpus, manifest, n_tokens=200_000):
+    """Αναφορά (#04, 12/11): N_eff ανά πηγή (train, ίδιο πέρασμα 200K tokens) σε κάθε checkpoint βάσης."""
+    import torch
+    from .finetune import routing, segments
+    from .model import load_checkpoint
+    from .train import load_bin
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    seg = segments(manifest)
+    train = load_bin(os.path.join(corpus, "train.bin"))
+    names = ("wiki_en", "wiki_el", "greeklish", "uesp_en")
+    out = [f"N_eff ανά πηγή (βάση, πριν την ενημέρωση): {' / '.join(names)}"]
+    for root in roots:
+        for d in sorted(glob.glob(os.path.join(root, "s*"))):
+            for arm in ("A", "B"):
+                ck = os.path.join(d, arm, "epoch1.pt")
+                if not os.path.exists(ck):
+                    continue
+                m, _ = load_checkpoint(ck, dev)
+                vals = []
+                for k in names:
+                    w, _ = routing(m, train[seg[k][0]:seg[k][1]], n_tokens, dev)
+                    w = (w / w.sum()).numpy()
+                    vals.append(1 / (w ** 2).sum())
+                out.append(f"{os.path.basename(d):3s} {arm} · " + " / ".join(f"{v:5.2f}" for v in vals))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", required=True)
     ap.add_argument("--old-root", default=None)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--corpus", default="corpus_r3", help="αν υπάρχει: και N_eff ανά πηγή στα checkpoints βάσης")
+    ap.add_argument("--manifest", default="r3_data_manifest.json")
     a = ap.parse_args()
     lines = []
     say = lines.append
@@ -91,6 +120,11 @@ def main():
     if len(allv) >= 3:
         d, nb = np.array([v[0] for v in allv]), np.array([v[1] for v in allv])
         say(f"Αναφορά: συσχέτιση Pearson N_eff(B)–Δ σε {len(allv)} seeds = {np.corrcoef(nb, d)[0, 1]:+.3f}")
+    if os.path.exists(os.path.join(a.corpus, "train.bin")) and os.path.exists(a.manifest):
+        try:
+            lines += spread([r for r in (a.old_root, a.root) if r], a.corpus, a.manifest)
+        except Exception as e:                    # η αναφορά δεν ρίχνει την ετυμηγορία
+            lines.append(f"N_eff ανά πηγή: ΣΦΑΛΜΑ {e}")
     txt = "\n".join(lines)
     print(txt)
     if a.out:
